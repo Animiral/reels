@@ -1,0 +1,46 @@
+reels.py is a tool that can reconstruct a looped string of symbols (“reel”) from a set of observed substrings.
+Input files, which contain the observed pieces, must adhere to the program’s defined input format. Pass the input files as command parameters. The program then prints one solution for each input file to standard out (as a default).
+The generated solutions are as short as possible. To reliably reconstruct a reel, include in the input as many and as large observations as possible, covering every symbol position in the reel at least once.
+
+
+usage: reels.py [-h] [-o OUT_FILE] [FILE [FILE ...]]
+
+Reads input from FILES in order and writes a one-line result for each input
+file to OUTPUT. If no input files are specified, reads from standard input. If
+no output files are specified, writes to standard output.
+
+positional arguments:
+  FILE                  input file(s)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -o OUT_FILE, --out_file OUT_FILE
+                        append solution to this file
+
+
+Input format:
+The input files consist of any number of observed substrings, each on a separate line.
+An observed substring contains any number of symbols.
+Each symbol is represented by a unicode word character. The set of word characters is the set that Python’s standard library regular expressions recognize, including unicode characters from input files with a unicode encoding.
+Non-word characters such as punctuation and spaces are not valid symbols.
+The program ignores empty lines.
+All valid lines from all input files make up the complete set of substrings to be used in the search.
+If the application encounters an ill-formatted input file, such as one with non-symbol characters, it aborts with an error message.
+
+
+Output format:
+The program outputs the shortest solution that it could find on a single line. 
+A solution is one of the shortest possible strings of symbol characters which contain every input observation as a substring.
+The solution is considered to loop around from the last to the first character. ABCDE is thus equivalent to BCDEA.
+The loop is broken at an arbitrary point in the output.
+
+
+Example:
+Given the following input file:
+---
+AABC
+ADA
+BCD
+---
+The program might output the following solution:
+AABCDAD
