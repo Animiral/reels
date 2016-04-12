@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env pypy3
 # -*- coding: UTF-8 -*-
 
 # The file README contains a general description of the program. Read on for implementation details.
@@ -29,8 +29,8 @@ import heapq
 g_obs = []               # list of observation strings/pieces
 g_overlap = []           # matrix with precomputed overlap results between pieces
 
-# logging.basicConfig(level=logging.DEBUG)
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.WARNING)
 logging.debug('Hello World')
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
@@ -96,7 +96,6 @@ class ReelNode:
 		return 'ReelNode({0},{1})'.format(self.sequence, self.free)
 
 	# Ordering for leaf heap.
-	# This is only kept for reference as the actual ordering is implemented using a tuple (est, depth, ReelNode) with lexicographic ordering.
 	def __lt__(self, other):
 		if self.est == other.est:
 			return len(self.sequence) < len(other.sequence) # if tied, prefer to examine more complete solutions first
@@ -271,16 +270,14 @@ If no output files are specified, writes to standard output.
 	if g_run_tests and (g_files or g_out_file):
 		parser.error('--test is incompatible with all other options and arguments.')
 
-# Reads reel observations from the files given as command line arguments
-def read_obs():
-	global g_obs
-	global g_files
+# Reads reel observations from the files in the parameter list.
+# Returns the resulting list of observations.
+def read_obs(*infiles):
+	logging.info('READ_OBS from %s...', list(infiles))
 
-	logging.info('READ_OBS from %s...', g_files)
+	obs = list()
 
-	g_obs = list()
-
-	for line in fileinput.input(g_files):
+	for line in fileinput.input(*infiles):
 		# remove newline at the end
 		line = line.strip()
 
@@ -292,13 +289,13 @@ def read_obs():
 		if not re.match('^\w+$', line):
 			raise RuntimeError('Illegal symbol in "{0}"'.format(line))
 
-		g_obs.append(line)
+		obs.append(line)
 
-	logging.debug('g_obs=%s', g_obs)
-
-	if not g_obs: raise RuntimeError('No input was given!')
-
+	logging.debug('obs=%s', obs)
+	if not obs: raise RuntimeError('No input was given!')
 	logging.info('READ_OBS DONE')
+
+	return obs
 
 # Prepares data structures: overlap matrix and reel graph
 def setup():
@@ -362,6 +359,8 @@ def astar():
 # Program entry point
 def main():
 	global g_out_file
+	global g_files
+	global g_obs
 
 	handle_args()
 
@@ -369,7 +368,7 @@ def main():
 		test()
 		return
 
-	read_obs()
+	g_obs = read_obs(g_files)
 	setup()
 	result = astar()
 
