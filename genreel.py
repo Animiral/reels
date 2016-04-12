@@ -23,26 +23,44 @@ def make_reel(N,S):
 	R = sample_pool(pool,N)
 	return ''.join(R)
 
-def observations(reel,N,S,T):
+# Old implementation: simple random substrings
+# def observations(reel,N,S,T):
+# 	for i in range(0,N):
+# 		L = random.randint(S,T)
+# 		k = random.randint(0,len(reel)-L)
+# 		yield reel[k:k+L]
+
+# Updated implementation: cut the reel into segments at random cut points, each of which becomes a piece, with a predefined overlap of 2
+def observations(reel,N):
+	R = len(reel)
+	cuts = random.sample(range(0,R), N)
+	cuts.sort()
+
 	for i in range(0,N):
-		L = random.randint(S,T)
-		k = random.randint(0,len(reel)-L)
-		yield reel[k:k+L]
+		low = cuts[i] -1
+		high = cuts[(i+1)%N] +1
+
+		if low < 0: low += R
+		if high < low: high += R
+
+		yield (reel*2)[low:high]
 
 def handle_args():
 	parser = argparse.ArgumentParser(description='Random generator for reels.py problems')
 	parser.add_argument('reel_size', type=int, help='number of symbols in the generated reel')
 	parser.add_argument('sym_count', type=int, help='number of distinct symbols in the alphabet')
 	parser.add_argument('obs_count', type=int, help='number of observations to generate')
-	parser.add_argument('obs_min', type=int, help='minimum size of an observation')
-	parser.add_argument('obs_max', type=int, help='maximum size of an observation')
+	# NOTE: observation size is now determined by the random size of the piece
+	# parser.add_argument('obs_min', type=int, help='minimum size of an observation')
+	# parser.add_argument('obs_max', type=int, help='maximum size of an observation')
 	args = parser.parse_args()
-	return args.reel_size, args.sym_count, args.obs_count, args.obs_min, args.obs_max
+	return args.reel_size, args.sym_count, args.obs_count # , args.obs_min, args.obs_max
 
-def random_observations(reel_size, sym_count, obs_count, obs_min, obs_max):
+def random_observations(reel_size, sym_count, obs_count): # , obs_min, obs_max):
 	random.seed()
 	reel = make_reel(reel_size, sym_count)
-	obs = observations(reel, obs_count, obs_min, obs_max)
+	obs = list(observations(reel, obs_count)) #, obs_min, obs_max))
+	random.shuffle(obs)      # input order should not matter, but shuffle just to be safe
 	return (reel, obs)
 
 # start the bus

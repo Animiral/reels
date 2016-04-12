@@ -29,8 +29,8 @@ import heapq
 g_obs = []               # list of observation strings/pieces
 g_overlap = []           # matrix with precomputed overlap results between pieces
 
-logging.basicConfig(level=logging.DEBUG)
-# logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 logging.debug('Hello World')
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
