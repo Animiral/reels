@@ -51,7 +51,7 @@ def main():
 	valid = True
 
 	for O in obs:
-		if not O in sol:
+		if not O in (sol*2):
 			sys.stdout.write('Piece missing in solution: "{0}"\n'.format(O))
 			valid = False
 

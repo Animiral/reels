@@ -43,7 +43,6 @@ def profile_reels():
 
 	pro_file = 'out.profile'
 	result = ''
-	# cProfile.runctx('result = reels.astar()', reels.__dict__, __dict__, pro_file)
 	cProfile.run('reels_astar_wrapper()', pro_file)
 
 	if reels.g_out_file:
@@ -65,7 +64,6 @@ def median(a):
 
 # returns median time
 def time_reels(print_stuff):
-	# import statistics
 	import time
 
 	N_RUNS = 20
@@ -85,7 +83,6 @@ def time_reels(print_stuff):
 		t1 = time.time()
 		measurements.append(t1-t0)
 
-	# median_time = statistics.median(measurements)
 	median_time = median(measurements)
 	if print_stuff: sys.stdout.write('measurements={0}, median time = '.format(measurements))
 	sys.stdout.write('{0:.3f}\n'.format(median_time))
