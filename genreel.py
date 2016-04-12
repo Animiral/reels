@@ -39,15 +39,19 @@ def handle_args():
 	args = parser.parse_args()
 	return args.reel_size, args.sym_count, args.obs_count, args.obs_min, args.obs_max
 
-# start the bus
-def main():
-	reel_size, sym_count, obs_count, obs_min, obs_max = handle_args()
-
+def random_observations(reel_size, sym_count, obs_count, obs_min, obs_max):
 	random.seed()
 	reel = make_reel(reel_size, sym_count)
-	print(reel)
+	obs = observations(reel, obs_count, obs_min, obs_max)
+	return (reel, obs)
 
-	for o in observations(reel, obs_count, obs_min, obs_max):
+# start the bus
+def main():
+	args = handle_args()
+	reel, obs = random_observations(*args)
+
+	print(reel)
+	for o in obs:
 		print(o)
 
 if __name__ == '__main__':
