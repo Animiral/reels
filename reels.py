@@ -23,9 +23,7 @@ import io
 import argparse
 import fileinput
 import re
-import itertools
 import logging
-import bisect # DELETEME
 import heapq
 
 g_obs = []               # list of observation strings/pieces
@@ -97,7 +95,8 @@ class ReelNode:
 	def __str__(self):
 		return 'ReelNode({0},{1})'.format(self.sequence, self.free)
 
-	# Ordering used to keep the leaf set in ReelGraph. It is defined to put low-est nodes at the end of the list.
+	# Ordering for leaf heap.
+	# This is only kept for reference as the actual ordering is implemented using a tuple (est, depth, ReelNode) with lexicographic ordering.
 	def __lt__(self, other):
 		if self.est == other.est:
 			return len(self.sequence) < len(other.sequence) # if tied, prefer to examine more complete solutions first
@@ -206,7 +205,7 @@ def purify(node):
 # The next_list is a list of nodes that can be reached from the current node.
 class ReelGraph:
 	_tbl = {}    # main node table
-	_leaf = []   # ordered list of leaf nodes, most expensive first
+	_leaf = []   # heap of leaf nodes; elems are tuple(est, depth, ReelNode) for lexicographic sorting
 
 	# Constructs the graph including its root node.
 	# free is the pre-filtered list of free pieces in the root (indices to g_obs).
@@ -235,14 +234,14 @@ class ReelGraph:
 		# self._tbl[pred].append(succ)
 		if succ not in self._tbl:
 			self._tbl[succ] = []
-			bisect.insort(self._leaf, succ)
+			heapq.heappush(self._leaf, succ)
 
 	# Returns the most promising node of the ReelGraph.
 	# The returned node is a leaf node with no successors.
 	# It has the smallest est among leaves in the graph.
 	# Internally, the node is removed from the list of leaves and thus no longer considered a leaf.
 	def pop(self):
-		return self._leaf.pop()
+		return heapq.heappop(self._leaf)
 
 g_graph = None          # search graph structure
 g_files = []            # list of input files
