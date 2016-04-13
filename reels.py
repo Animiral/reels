@@ -165,10 +165,15 @@ def successor(node):
 	free = node.free
 	overlap = 0
 
-	def _make_successor(i, sequence, overlap):
+	for i in range(0, len(free)):
+		piece_index = node.free[i]
+
+		# append free piece after partial solution
+		sequence = node.sequence + [piece_index]
+		overlap = g_overlap[node.sequence[-1]][piece_index]
 		free = node.free[:i] + node.free[i+1:]
 		if free:
-			cost = node.cost + (len(g_obs[node.free[i]]) - overlap)
+			cost = node.cost + (len(g_obs[piece_index]) - overlap)
 			succ = ReelNode(sequence, free, cost)
 			succ = purify(succ)
 			succ.est = est(succ)
@@ -176,20 +181,7 @@ def successor(node):
 			cost = len(final_solution(sequence))
 			succ = ReelNode(sequence, free, cost)
 			succ.est = succ.cost
-		return succ
-
-	for i in range(0, len(free)):
-		piece_index = node.free[i]
-
-		# append free piece before partial solution
-		sequence = [piece_index] + node.sequence
-		overlap = g_overlap[piece_index][node.sequence[0]]
-		yield _make_successor(i, sequence, overlap)
-
-		# append free piece after partial solution
-		sequence = node.sequence + [piece_index]
-		overlap = g_overlap[node.sequence[-1]][piece_index]
-		yield _make_successor(i, sequence, overlap)
+		yield succ
 
 # From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
 # These pieces do not have to be considered any longer and may even introduce errors.
@@ -202,49 +194,42 @@ def purify(node):
 
 	return node
 
-# The search graph is implemented as a dictionary node -> next_list.
-# The next_list is a list of nodes that can be reached from the current node.
-class ReelGraph:
-	_tbl = {}    # main node table
-	_leaf = []   # heap of leaf nodes; elems are tuple(est, depth, ReelNode) for lexicographic sorting
 
-	# Constructs the graph including its root node.
-	# free is the pre-filtered list of free pieces in the root (indices to g_obs).
-	def __init__(self,free):
-		global g_obs
 
-		piece0 = max(g_obs, key=len) # choose one of the largest pieces as starting point for the solution
-		sequence = [g_obs.index(piece0)];
-		cost = len(piece0)
-		node0 = ReelNode(sequence, free, cost)
-		node0.est = est(node0)
-		node0 = purify(node0)
+# # The search graph is implemented as a dictionary node -> next_list.
+# # The next_list is a list of nodes that can be reached from the current node.
+# class ReelGraph:
+# 	_leaf = []   # heap of leaf nodes; elems are tuple(est, depth, ReelNode) for lexicographic sorting
 
-		self._tbl = { node0 : [] }
-		self._leaf = [node0]
+# 	# Constructs the graph including its root node.
+# 	# free is the pre-filtered list of free pieces in the root (indices to g_obs).
+# 	def __init__(self,free):
+# 		global g_obs
 
-	# Adds the edge pred->succ to the graph.
-	# pred and succ are both nodes.
-	# If succ does not exist yet, it is added to the graph.
-	# However, if pred does not exist, that is an error. A RuntimeError will be raised.
-	def connect(self,pred,succ):
-		if pred not in self._tbl:
-			raise RuntimeError('Node not found in graph: {0}'.format(pred))
+# 		piece0 = max(g_obs, key=len) # choose one of the largest pieces as starting point for the solution
+# 		sequence = [g_obs.index(piece0)];
+# 		cost = len(piece0)
+# 		node0 = ReelNode(sequence, free, cost)
+# 		node0 = purify(node0)
+# 		node0.est = est(node0)
 
-		# DEBUG: build the search graph
-		# self._tbl[pred].append(succ)
-		if succ not in self._tbl:
-			self._tbl[succ] = []
-			heapq.heappush(self._leaf, succ)
+# 		self._leaf = [node0]
 
-	# Returns the most promising node of the ReelGraph.
-	# The returned node is a leaf node with no successors.
-	# It has the smallest est among leaves in the graph.
-	# Internally, the node is removed from the list of leaves and thus no longer considered a leaf.
-	def pop(self):
-		return heapq.heappop(self._leaf)
+# 	# Adds the edge pred->succ to the graph.
+# 	# pred and succ are both nodes.
+# 	# If succ does not exist yet, it is added to the graph.
+# 	# However, if pred does not exist, that is an error. A RuntimeError will be raised.
+# 	def connect(self,pred,succ):
+# 		heapq.heappush(self._leaf, succ)
 
-g_graph = None          # search graph structure
+# 	# Returns the most promising node of the ReelGraph.
+# 	# The returned node is a leaf node with no successors.
+# 	# It has the smallest est among leaves in the graph.
+# 	# Internally, the node is removed from the list of leaves and thus no longer considered a leaf.
+# 	def pop(self):
+# 		return heapq.heappop(self._leaf)
+
+# g_graph = None          # search graph structure
 g_files = []            # list of input files
 g_run_tests = False     # whether to run unit tests
 g_out_file = ''         # output file name
@@ -302,7 +287,7 @@ def read_obs(*infiles):
 def setup():
 	global g_obs
 	global g_overlap
-	global g_graph
+	# global g_graph
 
 	logging.info('SETUP...')
 
@@ -328,7 +313,7 @@ def setup():
 
 	# eliminate initial pieces with complete overlap to reduce search space
 	free_pieces = [i for i in range(0, len(g_obs)) if i not in elim_pieces]
-	g_graph = ReelGraph(free_pieces)
+	# g_graph = ReelGraph(free_pieces)
 
 	logging.debug('g_obs is now %s (eliminated %s).', list(map(lambda x: g_obs[x], free_pieces)), elim_pieces)
 	logging.debug('g_overlap = %s', g_overlap)
@@ -339,18 +324,31 @@ def setup():
 # This is the main search algorithm.
 # It operates on the global graph and returns the computed solution string.
 def astar():
-	global g_graph
+	global g_obs
 
 	logging.info('ASTAR...')
 
-	cursor = g_graph.pop()
+	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
+
+	# initialize leaf list with the root node
+	piece0 = g_obs[0]    # choose any obs as starting point for the solution
+	free = list(range(1,len(g_obs)))
+	cost = len(piece0)
+	node0 = ReelNode([0], free, cost)
+	node0 = purify(node0)
+	node0.est = est(node0) # NOTE: this is only useful for debug output because there is no other node to choose from at first
+
+	leaf = [node0]
+
+	# start of search
+	cursor = heapq.heappop(leaf)
 	logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	while(cursor.free):
 		for s in successor(cursor):
-			g_graph.connect(cursor, s)
+			heapq.heappush(leaf, s)
 
-		cursor = g_graph.pop()
+		cursor = heapq.heappop(leaf)
 		logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	logging.info('ASTAR DONE')
