@@ -194,41 +194,6 @@ def purify(node):
 
 	return node
 
-
-
-# # The search graph is implemented as a dictionary node -> next_list.
-# # The next_list is a list of nodes that can be reached from the current node.
-# class ReelGraph:
-# 	_leaf = []   # heap of leaf nodes; elems are tuple(est, depth, ReelNode) for lexicographic sorting
-
-# 	# Constructs the graph including its root node.
-# 	# free is the pre-filtered list of free pieces in the root (indices to g_obs).
-# 	def __init__(self,free):
-# 		global g_obs
-
-# 		piece0 = max(g_obs, key=len) # choose one of the largest pieces as starting point for the solution
-# 		sequence = [g_obs.index(piece0)];
-# 		cost = len(piece0)
-# 		node0 = ReelNode(sequence, free, cost)
-# 		node0 = purify(node0)
-# 		node0.est = est(node0)
-
-# 		self._leaf = [node0]
-
-# 	# Adds the edge pred->succ to the graph.
-# 	# pred and succ are both nodes.
-# 	# If succ does not exist yet, it is added to the graph.
-# 	# However, if pred does not exist, that is an error. A RuntimeError will be raised.
-# 	def connect(self,pred,succ):
-# 		heapq.heappush(self._leaf, succ)
-
-# 	# Returns the most promising node of the ReelGraph.
-# 	# The returned node is a leaf node with no successors.
-# 	# It has the smallest est among leaves in the graph.
-# 	# Internally, the node is removed from the list of leaves and thus no longer considered a leaf.
-# 	def pop(self):
-# 		return heapq.heappop(self._leaf)
-
 # g_graph = None          # search graph structure
 g_files = []            # list of input files
 g_run_tests = False     # whether to run unit tests

@@ -17,16 +17,14 @@ import reels
 # Parse and handle command arguments
 def handle_args():
 	global g_desc
-	global g_files
-	global g_out_file
 
 	parser = argparse.ArgumentParser(description=g_desc)
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
-	parser.add_argument('-o', '--out_file', dest='out_file', required=True, help='reels output file (last line contains solution)')
+	parser.add_argument('-o', '--out_file', required=True, help='reels output file (last line contains solution)')
+	parser.add_argument('-s', '--solution', help='reference solution string - if provided, length and loop-invariant match is checked')
 
 	args = parser.parse_args()
-	g_files = args.files
-	g_out_file = args.out_file
+	return args.files, args.out_file, args.solution
 
 # Reads reels.py output solution from out_file.
 # We assume that the last non-empty line in the output file is the solution that we want to check against.
@@ -41,12 +39,9 @@ def read_solution(out_file):
 		raise RuntimeError('No solution found in %s.', out_file)
 
 def main():
-	global g_files
-	global g_out_file
-
-	handle_args()
-	obs = reels.read_obs(g_files)
-	sol = read_solution(g_out_file)
+	files, out_file, reference = handle_args()
+	obs = reels.read_obs(files)
+	sol = read_solution(out_file)
 
 	valid = True
 
@@ -55,12 +50,25 @@ def main():
 			sys.stdout.write('Piece missing in solution: "{0}"\n'.format(O))
 			valid = False
 
-	len_sol = len(sol)
-	len_obs = len(''.join(obs))
+	if reference:
+		len_sol = len(sol)
+		len_ref = len(reference)
 
-	if len_obs < len_sol:
-		sys.stdout.write('Solution is too long. ({0} chars; {1} chars observed)\n'.format(len_sol, len_obs))
-		valid = False
+		if len_sol > len_ref:
+			sys.stdout.write('Solution is too long. ({0} chars; {1} chars reference)\n'.format(len_sol, len_ref))
+			valid = False
+		else:
+			if not (reference in (sol*2) and sol in (reference*2)):
+				sys.stdout.write('Solution does not match reference. (output="{0}"; reference="{1}")\n'.format(sol, reference))
+				# Solution still passes if the reference happens not to be the only or optimal solution
+
+	else:
+		len_sol = len(sol)
+		len_obs = len(''.join(obs))
+
+		if len_obs < len_sol:
+			sys.stdout.write('Solution is too long. ({0} chars; {1} chars observed)\n'.format(len_sol, len_obs))
+			valid = False
 
 	if valid:
 		sys.stdout.write('PASSED\n')
