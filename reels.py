@@ -31,13 +31,12 @@ g_overlap = []           # matrix with precomputed overlap results between piece
 
 # logging.basicConfig(level=logging.DEBUG)
 logging.basicConfig(level=logging.WARNING)
-logging.debug('Hello World')
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
 # Returns the number of overlapping symbols when appending the right piece to the left piece
 def overlap(left, right):
-	max_overlap = min(len(left),len(right))
+	max_overlap = min(len(left),len(right)) - 1 # legal pieces can not overlap whole
 
 	for i in range(max_overlap, 0, -1):
 		if left[-i:] == right[:i]:
@@ -162,25 +161,22 @@ def est(node):
 def successor(node):
 	global g_obs
 
-	free = node.free
 	overlap = 0
 
-	for i in range(0, len(free)):
-		piece_index = node.free[i]
+	for i in range(0, len(node.free)):
+		P = node.free[i]       # new piece
+		A = node.sequence[0]   # sequence first piece
+		Z = node.sequence[-1]  # sequence last piece
 
 		# append free piece after partial solution
-		sequence = node.sequence + [piece_index]
-		overlap = g_overlap[node.sequence[-1]][piece_index]
+		sequence = node.sequence + [P]
 		free = node.free[:i] + node.free[i+1:]
-		if free:
-			cost = node.cost + (len(g_obs[piece_index]) - overlap)
-			succ = ReelNode(sequence, free, cost)
-			succ = purify(succ)
-			succ.est = est(succ)
-		else:
-			cost = len(final_solution(sequence))
-			succ = ReelNode(sequence, free, cost)
-			succ.est = succ.cost
+		cost = node.cost + len(g_obs[P]) + g_overlap[Z][A] - g_overlap[Z][P] - g_overlap[P][A]
+
+		succ = ReelNode(sequence, free, cost)
+		if free: succ = purify(succ)
+		succ.est = est(succ)
+
 		yield succ
 
 # From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
@@ -212,15 +208,10 @@ If no output files are specified, writes to standard output.
 		''')
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
 	parser.add_argument('-o', '--out_file', dest='out_file', help='append solution to this file')
-	parser.add_argument('--test', dest='run_tests', action='store_true', help=argparse.SUPPRESS)
 
 	args = parser.parse_args()
 	g_files = args.files
-	g_run_tests = args.run_tests
 	g_out_file = args.out_file
-
-	if g_run_tests and (g_files or g_out_file):
-		parser.error('--test is incompatible with all other options and arguments.')
 
 # Reads reel observations from the files in the parameter list.
 # Returns the resulting list of observations.
@@ -258,6 +249,7 @@ def setup():
 
 	# prepare g_obs: remove duplicates to avoid both getting discarded as redundant
 	g_obs = list(set(g_obs))
+	g_obs.sort() # DEBUG: establish deterministic order of obs
 
 	N = len(g_obs)
 	elim_pieces = [] # redundant pieces list
@@ -266,15 +258,14 @@ def setup():
 
 	for i in range(0,N):
 		for j in range(0,N):
-			if i != j:
-				obs_i = g_obs[i]
-				obs_j = g_obs[j]
+			obs_i = g_obs[i]
+			obs_j = g_obs[j]
 
-				# mark redundant piece if we find any
-				if obs_i in obs_j:
-					elim_pieces.append(i)
+			# mark redundant piece if we find any
+			if (i != j) and (obs_i in obs_j):
+				elim_pieces.append(i)
 
-				g_overlap[i][j] = overlap(obs_i, obs_j)
+			g_overlap[i][j] = overlap(obs_i, obs_j)
 
 	# eliminate initial pieces with complete overlap to reduce search space
 	free_pieces = [i for i in range(0, len(g_obs)) if i not in elim_pieces]
@@ -296,9 +287,9 @@ def astar():
 	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 
 	# initialize leaf list with the root node
-	piece0 = g_obs[0]    # choose any obs as starting point for the solution
+	# choose any obs as starting point for the solution
 	free = list(range(1,len(g_obs)))
-	cost = len(piece0)
+	cost = len(g_obs[0]) - g_overlap[0][0]
 	node0 = ReelNode([0], free, cost)
 	node0 = purify(node0)
 	node0.est = est(node0) # NOTE: this is only useful for debug output because there is no other node to choose from at first
@@ -327,10 +318,6 @@ def main():
 
 	handle_args()
 
-	if g_run_tests:
-		test()
-		return
-
 	g_obs = read_obs(g_files)
 	setup()
 	result = astar()
@@ -341,174 +328,6 @@ def main():
 		out_file.close()
 	else:
 		sys.stdout.write(result + '\n')
-
-# Some tests for this module
-def test():
-	logging.info('TEST...')
-
-	test_overlap()
-	test_solution()
-	test_est()
-	test_purify()
-	test_successor()
-
-	logging.info('TEST DONE')
-
-def test_overlap():
-	sys.stderr.write('Test overlap(left,right):')
-
-	cases = [
-		('abc','defg',0),
-		('abc','cde',1),
-		('abcdef','def',3),
-		('abcdef','cde',0)
-	]
-
-	for c in cases:
-		left, right, expected = c
-		sys.stderr.write('\toverlap({0},{1}) == {2}: '.format(left,right,expected))
-		actual = overlap(left, right)
-		if actual == expected: 
-			sys.stderr.write('OK\n')
-		else:                  
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-def test_solution():
-	global g_obs
-	global g_overlap
-
-	sys.stderr.write('Test solution(sequence):\n')
-
-	g_obs = ['abc','cde','cab']
-	g_overlap = [[0, 1, 1], [0, 0, 0], [2, 0, 0]]
-	cases = [
-		([0,1],'abcde'),
-		([1,0],'cdeabc'),
-		([0,2],'abcab')
-	]
-
-	for c in cases:
-		sequence, expected = c
-		sys.stderr.write('\tsolution({0}) == {1}: '.format(sequence,expected))
-		actual = solution(sequence)
-		if actual == expected: 
-			sys.stderr.write('OK\n')
-		else:                  
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-def test_est():
-	global g_obs
-	global g_overlap
-
-	sys.stderr.write('Test est(node):\n')
-
-	g_obs = ['abc','cdef']
-	g_overlap = [[0,0],[1,0]]
-	cases = [
-		(ReelNode([0],[1],3),3+3),
-		(ReelNode([1],[0],4),4+2),
-		(ReelNode([0,1],[],6),6)
-	]
-
-	for c in cases:
-		node, expected = c
-		sys.stderr.write('\test({0}) == {1}: '.format(node,expected))
-		actual = est(node)
-		if actual == expected:
-			sys.stderr.write('OK\n')
-		else:                  
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-	g_obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	g_overlap = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
-	cases = [
-		(ReelNode([2],[0,1,3,4],11),11+1),
-		(ReelNode([0,2],[1,4],13),13+1),
-		(ReelNode([1,0,2],[4],14),14+1)
-	]
-
-	for c in cases:
-		node, expected = c
-		sys.stderr.write('\test({0}) == {1}: '.format(node,expected))
-		actual = est(node)
-		if actual == expected:
-			sys.stderr.write('OK\n')
-		else:
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-def test_purify():
-	global g_obs
-	global g_overlap
-
-	sys.stderr.write('Test purify(node):\n')
-
-	def _run():
-		for c in cases:
-			node, expected = c
-			sys.stderr.write('\tpurify({0}) == {1}: '.format(node,expected))
-			actual = purify(node)
-			if actual == expected: 
-				sys.stderr.write('OK\n')
-			else:                  
-				sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-	g_obs = ['abc','cde','bcd','ac']
-	g_overlap = [[0,1,2,0],[0,0,0,0],[0,2,0,0],[0,1,0,0]]
-	cases = [
-		(ReelNode([0,1],[2,3],5),ReelNode([0,1],[3],5)),
-		(ReelNode([2,0],[1,3],6),ReelNode([2,0],[1,3],6))
-	]
-
-	_run()
-
-	g_obs=['AAA', 'AAB', 'ABBCA', 'CAAB', 'BB']
-	g_overlap=[[0, 2, 1, 0, 0], [0, 0, 2, 0, 1], [1, 1, 0, 2, 0], [0, 3, 2, 0, 1], [0, 0, 0, 0, 0]]
-	cases = [
-		(ReelNode([2],[0,1,2,3,4],5),ReelNode([2],[0,1,3],5))
-	]
-
-	_run()
-
-def test_successor():
-	global g_obs
-	global g_overlap
-
-	sys.stderr.write('Test successor(node):\n')
-
-	g_obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	g_overlap = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
-
-	n0 = ReelNode([2],[0,1,3,4],11)
-
-	for S in successor(n0):
-		est1 = S.est
-		est2 = est(S)
-
-		sys.stderr.write('\tsuccessor(n0):est({0}) == {1}: '.format(est1,est2))
-		if S.est == est2:
-			sys.stderr.write('OK\n')
-		else:
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(est2,S.est))
-
-	# cases = [
-	# 	(ReelNode([2],[0,1,3,4],11), [
-	# 		ReelNode([0,2],[])
-	# 	]),
-	# 	(ReelNode([0,2],[1,4],13),13+1),
-	# 	(ReelNode([1,0,2],[4],14),14+1)
-	# ]
-
-
-	# for c in cases:
-	# 	node, expected = c
-	# 	sys.stderr.write('\test({0}) == {1}: '.format(node,expected))
-	# 	actual = est(node)
-	# 	if actual == expected:
-	# 		sys.stderr.write('OK\n')
-	# 	else:                  
-	# 		sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-
 
 if __name__ == "__main__":
 	main()
