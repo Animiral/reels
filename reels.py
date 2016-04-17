@@ -30,7 +30,7 @@ g_obs = []               # list of observation strings/pieces
 g_overlap = []           # matrix with precomputed overlap results between pieces
 
 # logging.basicConfig(level=logging.DEBUG)
-logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.WARNING)
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
@@ -208,10 +208,13 @@ If no output files are specified, writes to standard output.
 		''')
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
 	parser.add_argument('-o', '--out_file', dest='out_file', help='append solution to this file')
+	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS) #, help='debug log level')
 
 	args = parser.parse_args()
 	g_files = args.files
 	g_out_file = args.out_file
+	if args.debug: logging.basicConfig(level=logging.DEBUG)
+	else:          logging.basicConfig(level=logging.WARNING)
 
 # Reads reel observations from the files in the parameter list.
 # Returns the resulting list of observations.
@@ -240,46 +243,42 @@ def read_obs(*infiles):
 	return obs
 
 # Prepares data structures: overlap matrix and reel graph
-def setup():
-	global g_obs
-	global g_overlap
-	# global g_graph
-
+def setup(obs):
 	logging.info('SETUP...')
 
-	# prepare g_obs: remove duplicates to avoid both getting discarded as redundant
-	g_obs = list(set(g_obs))
-	g_obs.sort() # DEBUG: establish deterministic order of obs
+	# prepare obs: remove duplicates to avoid both getting discarded as redundant
+	obs = list(set(obs))
+	obs.sort() # DEBUG: establish deterministic order of obs
 
-	N = len(g_obs)
+	N = len(obs)
 	elim_pieces = [] # redundant pieces list
 
-	g_overlap = [[0] * N for i in range(0,N)]
+	overmat = [[0] * N for i in range(0,N)] # overlap matrix
 
 	for i in range(0,N):
 		for j in range(0,N):
-			obs_i = g_obs[i]
-			obs_j = g_obs[j]
+			obs_i = obs[i]
+			obs_j = obs[j]
 
 			# mark redundant piece if we find any
 			if (i != j) and (obs_i in obs_j):
 				elim_pieces.append(i)
 
-			g_overlap[i][j] = overlap(obs_i, obs_j)
+			overmat[i][j] = overlap(obs_i, obs_j)
 
 	# eliminate initial pieces with complete overlap to reduce search space
-	free_pieces = [i for i in range(0, len(g_obs)) if i not in elim_pieces]
-	# g_graph = ReelGraph(free_pieces)
+	free = [i for i in range(0, len(obs)) if i not in elim_pieces]
 
-	logging.debug('g_obs is now %s (eliminated %s).', list(map(lambda x: g_obs[x], free_pieces)), elim_pieces)
-	logging.debug('g_overlap = %s', g_overlap)
+	logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim_pieces)
+	logging.debug('overmat = %s', overmat)
 
 	logging.info('SETUP DONE')
+	return obs, overmat, free
 
 
 # This is the main search algorithm.
 # It operates on the global graph and returns the computed solution string.
-def astar():
+def astar(free):
 	global g_obs
 
 	logging.info('ASTAR...')
@@ -288,9 +287,8 @@ def astar():
 
 	# initialize leaf list with the root node
 	# choose any obs as starting point for the solution
-	free = list(range(1,len(g_obs)))
-	cost = len(g_obs[0]) - g_overlap[0][0]
-	node0 = ReelNode([0], free, cost)
+	cost = len(g_obs[free[0]]) - g_overlap[0][0]
+	node0 = ReelNode([free[0]], free[1:], cost)
 	node0 = purify(node0)
 	node0.est = est(node0) # NOTE: this is only useful for debug output because there is no other node to choose from at first
 
@@ -315,12 +313,13 @@ def main():
 	global g_out_file
 	global g_files
 	global g_obs
+	global g_overlap
 
 	handle_args()
 
 	g_obs = read_obs(g_files)
-	setup()
-	result = astar()
+	g_obs, g_overlap, free = setup(g_obs)
+	result = astar(free)
 
 	if g_out_file:
 		out_file = io.open(g_out_file, 'a')

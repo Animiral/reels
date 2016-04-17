@@ -26,11 +26,13 @@ def random_profile():
 	sys.stdout.write('result="{0}"\n'.format(result))
 
 def reels_astar_wrapper():
+	global free
 	global result
-	result = reels.astar()
+	result = reels.astar(free)
 
 def profile_reels():
 	import cProfile
+	global free
 	global result
 
 	reels.handle_args()
@@ -39,7 +41,7 @@ def profile_reels():
 		raise RuntimeException('Tests option disabled for profiler.')
 
 	reels.g_obs = reels.read_obs(reels.g_files)
-	reels.setup()
+	reels.g_obs, reels.g_overlap, free = reels.setup(reels.g_obs)
 
 	pro_file = 'out.profile'
 	result = ''
@@ -77,9 +79,9 @@ def time_reels(print_stuff):
 
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
-		reels.setup()
+		reels.g_obs, reels.g_overlap, free = reels.setup(reels.g_obs)
 		t0 = time.time()
-		reels.astar()
+		reels.astar(free)
 		t1 = time.time()
 		measurements.append(t1-t0)
 
