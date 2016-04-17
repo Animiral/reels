@@ -25,6 +25,7 @@ import fileinput
 import re
 import logging
 import heapq
+import itertools
 
 g_obs = []               # list of observation strings/pieces
 g_overlap = []           # matrix with precomputed overlap results between pieces
@@ -122,38 +123,35 @@ class ReelNode:
 		return h
 
 # Returns the est of a node f(n) = g(n) + h(n), where g is the cost so far and h is the estimated cost to goal.
+# g(n) is the number of symbols in the partial solution which are certainly a unique part of the final solution.
+# Some possible overlapping symbols between the last and first piece of the partial solution are not counted
+# towards the cost so far because even with some free pieces left over, the final reel might already be complete.
+# h(n) is the estimated number of symbols that the free pieces are going to contribute towards the final reel.
+# As an optimistic guess, we assume that every free piece will be placed such that it achieves optimal overlap
+# with another piece to the left. The other piece could be any of the other free pieces or the tail of the sequence.
+# Additionally, we discount a number of symbols according to the best possible overlap to the head of the sequence.
 def est(node):
 	global g_obs
 	global g_overlap
 
-	# if node.free:
-	# 	sol = solution(node.sequence)
-	# else:
-	# 	sol = final_solution(node.sequence)
-	# G = len(sol)
 	G = node.cost
 
-	# compute heuristic distance to goal by assuming that we will get optimal overlap for every free piece
-	H = 0
-	# left_anchor = [node.sequence[0]] + node.free
-	# right_anchor = [node.sequence[-1]] + node.free
+	free = node.free
+	if not free: return G   # this is goal node
 
-	node_free = node.free
 	sequence = node.sequence
-	for f in node_free:
-		left_max = max(g_overlap[f][sequence[0]], max(map(lambda a: g_overlap[f][a], node_free)))
-		right_max = max(g_overlap[sequence[-1]][f], max(map(lambda a: g_overlap[a][f], node_free)))
-		H += max(0, len(g_obs[f]) - left_max - right_max)
+	A = sequence[0]
+	Z = sequence[-1]
 
-	# left_anchor = [node.sequence[0]] + node.free
-	# right_anchor = [node.sequence[-1]] + node.free
+	H = g_overlap[Z][A]                            # revert finished-loop assumption from cost g(n)
+	H -= max(map(lambda a: g_overlap[a][A], free)) # assume best overlap from any free piece to A
 
-	# for f in node.free:
-	# 	left = lambda a: g_overlap[f][a]
-	# 	right = lambda a: g_overlap[a][f]
-	# 	left_max = max(map(left, left_anchor))
-	# 	right_max = max(map(right, right_anchor))
-	# 	H += max(0, len(g_obs[f]) - left_max - right_max)
+	for f in free:
+		free_Z = itertools.chain(free, [Z])
+		max_overlap = max(map(lambda a: g_overlap[a][f], free_Z))
+		H += len(g_obs[f]) - max_overlap
+
+	H = max(0,H)
 
 	return G + H
 

@@ -61,7 +61,7 @@ def test_est():
 	sys.stderr.write('Test est(node):\n')
 
 	reels.g_obs = ['abc','cdef']
-	reels.g_overlap = [[0,0],[1,0]]
+	reels.g_overlap = [[0,1],[0,0]]
 	cases = [
 		(reels.ReelNode([0],[1],3),3+3),
 		(reels.ReelNode([1],[0],4),4+2),
@@ -80,8 +80,8 @@ def test_est():
 	reels.g_obs = ['318', '931', '8079553b00a', '180', '0ab93']
 	reels.g_overlap = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
 	cases = [
-		(reels.ReelNode([2],[0,1,3,4],11),11+1),
-		(reels.ReelNode([0,2],[1,4],13),13+1),
+		(reels.ReelNode([2],[0,1,3,4],11),11+4),
+		(reels.ReelNode([0,2],[1,4],13),13+2),
 		(reels.ReelNode([1,0,2],[4],14),14+1)
 	]
 
