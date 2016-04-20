@@ -30,9 +30,6 @@ import itertools
 g_obs = []               # list of observation strings/pieces
 g_overlap = []           # matrix with precomputed overlap results between pieces
 
-# logging.basicConfig(level=logging.DEBUG)
-# logging.basicConfig(level=logging.WARNING)
-
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
 # Returns the number of overlapping symbols when appending the right piece to the left piece
@@ -267,8 +264,8 @@ def setup(obs):
 	# eliminate initial pieces with complete overlap to reduce search space
 	free = [i for i in range(0, len(obs)) if i not in elim_pieces]
 
-	logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim_pieces)
-	logging.debug('overmat = %s', overmat)
+	# logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim_pieces)
+	# logging.debug('overmat = %s', overmat)
 
 	logging.info('SETUP DONE')
 	return obs, overmat, free
@@ -292,16 +289,26 @@ def astar(free):
 
 	leaf = [node0]
 
+	# n_leaf = 100 # DEBUG counter for leaves
+	# min_est = node0.est
+	# max_est = node0.est
+
 	# start of search
 	cursor = heapq.heappop(leaf)
-	logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
+	# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	while(cursor.free):
 		for s in successor(cursor):
 			heapq.heappush(leaf, s)
+		# 	min_est = min(s.est, min_est) # DEBUG tracking
+		# 	max_est = max(s.est, max_est) # DEBUG tracking
+
+		# if len(leaf) > n_leaf:           # DEBUG report mem usage
+		# 	logging.debug('len(leaf) = %s (d: %s ~ %s)', len(leaf), min_est, max_est)
+		# 	n_leaf = len(leaf) * 1.5
 
 		cursor = heapq.heappop(leaf)
-		logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
+		# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	logging.info('ASTAR DONE')
 	return final_solution(cursor.sequence)
