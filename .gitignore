@@ -1,3 +1,4 @@
 __pycache__/
 timings.out
 in/*.out
+out.profile

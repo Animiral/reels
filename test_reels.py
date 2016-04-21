@@ -40,8 +40,9 @@ def test_overlap():
 def test_solution():
 	sys.stderr.write('Test solution(sequence):\n')
 
-	reels.g_obs = ['abc','cde','cab']
-	reels.g_overlap = [[0, 1, 1], [0, 0, 0], [2, 0, 0]]
+	obs = ['abc','cde','cab']
+	overmat = [[0, 1, 1], [0, 0, 0], [2, 0, 0]]
+	context = reels.Context(obs, overmat)
 	cases = [
 		([0,1],'abcde'),
 		([1,0],'cdeabc'),
@@ -51,7 +52,7 @@ def test_solution():
 	for c in cases:
 		sequence, expected = c
 		sys.stderr.write('\tsolution({0}) == {1}: '.format(sequence,expected))
-		actual = reels.solution(sequence)
+		actual = reels.solution(sequence, context)
 		if actual == expected: 
 			sys.stderr.write('OK\n')
 		else:                  
@@ -60,8 +61,9 @@ def test_solution():
 def test_est():
 	sys.stderr.write('Test est(node):\n')
 
-	reels.g_obs = ['abc','cdef']
-	reels.g_overlap = [[0,1],[0,0]]
+	obs = ['abc','cdef']
+	overmat = [[0,1],[0,0]]
+	context = reels.Context(obs, overmat)
 	cases = [
 		(reels.ReelNode([0],[1],3),3+3),
 		(reels.ReelNode([1],[0],4),4+2),
@@ -71,14 +73,15 @@ def test_est():
 	for c in cases:
 		node, expected = c
 		sys.stderr.write('\test({0}) == {1}: '.format(node,expected))
-		actual = reels.est(node)
+		actual = reels.est(node, context)
 		if actual == expected:
 			sys.stderr.write('OK\n')
 		else:                  
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
-	reels.g_obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	reels.g_overlap = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
+	obs = ['318', '931', '8079553b00a', '180', '0ab93']
+	overmat = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
+	context = reels.Context(obs, overmat)
 	cases = [
 		(reels.ReelNode([2],[0,1,3,4],11),11+4),
 		(reels.ReelNode([0,2],[1,4],13),13+2),
@@ -88,7 +91,7 @@ def test_est():
 	for c in cases:
 		node, expected = c
 		sys.stderr.write('\test({0}) == {1}: '.format(node,expected))
-		actual = reels.est(node)
+		actual = reels.est(node, context)
 		if actual == expected:
 			sys.stderr.write('OK\n')
 		else:
@@ -101,14 +104,15 @@ def test_purify():
 		for c in cases:
 			node, expected = c
 			sys.stderr.write('\tpurify({0}) == {1}: '.format(node,expected))
-			actual = reels.purify(node)
+			actual = reels.purify(node, context)
 			if actual == expected: 
 				sys.stderr.write('OK\n')
 			else:                  
 				sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
-	reels.g_obs = ['abc','cde','bcd','ac']
-	reels.g_overlap = [[0,1,2,0],[0,0,0,0],[0,2,0,0],[0,1,0,0]]
+	obs = ['abc','cde','bcd','ac']
+	overmat = [[0,1,2,0],[0,0,0,0],[0,2,0,0],[0,1,0,0]]
+	context = reels.Context(obs, overmat)
 	cases = [
 		(reels.ReelNode([0,1],[2,3],5),reels.ReelNode([0,1],[3],5)),
 		(reels.ReelNode([2,0],[1,3],6),reels.ReelNode([2,0],[1,3],6))
@@ -116,8 +120,9 @@ def test_purify():
 
 	_run()
 
-	reels.g_obs=['AAA', 'AAB', 'ABBCA', 'CAAB', 'BB']
-	reels.g_overlap=[[0, 2, 1, 0, 0], [0, 0, 2, 0, 1], [1, 1, 0, 2, 0], [0, 3, 2, 0, 1], [0, 0, 0, 0, 0]]
+	obs=['AAA', 'AAB', 'ABBCA', 'CAAB', 'BB']
+	overmat = [[2, 2, 1, 0, 0], [0, 0, 2, 0, 1], [1, 1, 1, 2, 0], [0, 3, 2, 0, 1], [0, 0, 0, 0, 1]]
+	context = reels.Context(obs, overmat)
 	cases = [
 		(reels.ReelNode([2],[0,1,2,3,4],5),reels.ReelNode([2],[0,1,3],5))
 	]
@@ -127,14 +132,15 @@ def test_purify():
 def test_successor():
 	sys.stderr.write('Test successor(node):\n')
 
-	reels.g_obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	reels.g_overlap = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
+	obs = ['318', '931', '8079553b00a', '180', '0ab93']
+	overmat = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
+	context = reels.Context(obs, overmat)
 
 	n0 = reels.ReelNode([2],[0,1,3,4],11)
 
-	for S in reels.successor(n0):
+	for S in reels.successor(n0, context):
 		est1 = S.est
-		est2 = reels.est(S)
+		est2 = reels.est(S, context)
 
 		sys.stderr.write('\tsuccessor(n0):est({0}) == {1}: '.format(est1,est2))
 		if S.est == est2:

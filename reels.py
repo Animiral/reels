@@ -26,9 +26,12 @@ import re
 import logging
 import heapq
 import itertools
+import collections
 
-g_obs = []               # list of observation strings/pieces
-g_overlap = []           # matrix with precomputed overlap results between pieces
+# Context holds information about the search environment.
+# obs is the list of observation strings taken from the source reel.
+# overmat is the overlap matrix of precomputed overlaps between observations.
+Context = collections.namedtuple('Context', ['obs', 'overmat'])
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
@@ -42,31 +45,28 @@ def overlap(left, right):
 	else:
 		return 0
 
-# Returns the solution string from a list of g_obs indices representation
-def solution(sequence):
-	global g_obs
-	global g_overlap
+# Returns the solution string from a list of obs indices representation
+def solution(sequence, context):
+	obs, overmat = context
 
 	prev_index = sequence[0]
-	S = g_obs[prev_index]
+	S = obs[prev_index]
 
 	for next_index in sequence[1:]:
-		next_piece = g_obs[next_index]
-		savings = g_overlap[prev_index][next_index]
+		next_piece = obs[next_index]
+		savings = overmat[prev_index][next_index]
 		S += next_piece[savings:]
 		prev_index = next_index
 
 	return S
 
-# Returns the final solution string from a list of g_obs indices representation.
+# Returns the final solution string from a list of obs indices representation.
 # The difference to an intermediate solution is that due to its looped nature,
 # overlap between the first and last piece can cut off some characters in the final solution.
-def final_solution(sequence):
-	global g_overlap
+def final_solution(sequence, context):
+	S = solution(sequence, context)
 
-	S = solution(sequence)
-
-	loop_overlap = g_overlap[sequence[-1]][sequence[0]] # Careful: don’t repeat the start of the solution if it overlaps with the end piece
+	loop_overlap = context.overmat[sequence[-1]][sequence[0]] # Careful: don’t repeat the start of the solution if it overlaps with the end piece
 	if loop_overlap > 0:
 		return S[:-loop_overlap]
 	else:
@@ -127,9 +127,8 @@ class ReelNode:
 # As an optimistic guess, we assume that every free piece will be placed such that it achieves optimal overlap
 # with another piece to the left. The other piece could be any of the other free pieces or the tail of the sequence.
 # Additionally, we discount a number of symbols according to the best possible overlap to the head of the sequence.
-def est(node):
-	global g_obs
-	global g_overlap
+def est(node, context):
+	obs, overmat = context
 
 	G = node.cost
 
@@ -140,21 +139,21 @@ def est(node):
 	A = sequence[0]
 	Z = sequence[-1]
 
-	H = g_overlap[Z][A]                            # revert finished-loop assumption from cost g(n)
-	H -= max(map(lambda a: g_overlap[a][A], free)) # assume best overlap from any free piece to A
+	H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+	H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
 
 	for f in free:
 		free_Z = itertools.chain(free, [Z])
-		max_overlap = max(map(lambda a: g_overlap[a][f], free_Z))
-		H += len(g_obs[f]) - max_overlap
+		max_overlap = max(map(lambda a: overmat[a][f], free_Z))
+		H += len(obs[f]) - max_overlap
 
 	H = max(0,H)
 
 	return G + H
 
 # Generates all successors to the given node
-def successor(node):
-	global g_obs
+def successor(node, context):
+	obs, overmat = context
 
 	overlap = 0
 
@@ -166,59 +165,49 @@ def successor(node):
 		# append free piece after partial solution
 		sequence = node.sequence + [P]
 		free = node.free[:i] + node.free[i+1:]
-		cost = node.cost + len(g_obs[P]) + g_overlap[Z][A] - g_overlap[Z][P] - g_overlap[P][A]
+		cost = node.cost + len(obs[P]) + overmat[Z][A] - overmat[Z][P] - overmat[P][A]
 
 		succ = ReelNode(sequence, free, cost)
-		if free: succ = purify(succ)
-		succ.est = est(succ)
+		if free: succ = purify(succ, context)
+		succ.est = est(succ, context)
 
 		yield succ
 
 # From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
 # These pieces do not have to be considered any longer and may even introduce errors.
-def purify(node):
-	global g_obs
-
-	sol = solution(node.sequence)
-	not_redundant = lambda f: g_obs[f] not in sol
+def purify(node, context):
+	obs = context.obs
+	sol = solution(node.sequence, context)
+	not_redundant = lambda f: obs[f] not in sol
 	node.free = list(filter(not_redundant, node.free))
 
 	return node
 
-# g_graph = None          # search graph structure
-g_files = []            # list of input files
-g_run_tests = False     # whether to run unit tests
-g_out_file = ''         # output file name
-
 # Parse and handle command arguments
 def handle_args():
-	global g_files
-	global g_run_tests
-	global g_out_file
-
 	parser = argparse.ArgumentParser(description='''
 Reads input from FILES in order and writes a one-line result for each input file to OUTPUT.
 If no input files are specified, reads from standard input.
 If no output files are specified, writes to standard output.
 		''')
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
-	parser.add_argument('-o', '--out_file', dest='out_file', help='append solution to this file')
+	parser.add_argument('-o', '--out_file', help='append solution to this file')
 	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS) #, help='debug log level')
 
 	args = parser.parse_args()
-	g_files = args.files
-	g_out_file = args.out_file
+	files = args.files
+	out_file = args.out_file
 	if args.debug: logging.basicConfig(level=logging.DEBUG)
 	else:          logging.basicConfig(level=logging.WARNING)
 
+	return files, out_file
+
 # Reads reel observations from the files in the parameter list.
 # Returns the resulting list of observations.
-def read_obs(*infiles):
-	logging.info('READ_OBS from %s...', list(infiles))
+def make_obs(*in_files):
+	obs = []
 
-	obs = list()
-
-	for line in fileinput.input(*infiles):
+	for line in fileinput.input(*in_files):
 		# remove newline at the end
 		line = line.strip()
 
@@ -233,20 +222,16 @@ def read_obs(*infiles):
 		obs.append(line)
 
 	if not obs: raise RuntimeError('No input was given!')
-	logging.info('READ_OBS DONE')
-
-	return obs
-
-# Prepares data structures: overlap matrix and reel graph
-def setup(obs):
-	logging.info('SETUP...')
-
-	# prepare obs: remove duplicates to avoid both getting discarded as redundant
+	
+	# prepare obs: remove duplicates (avoids both getting discarded as redundant later)
 	obs = list(set(obs))
 	obs.sort() # DEBUG: establish deterministic order of obs
 
+	return obs
+
+def make_overmat(obs):
 	N = len(obs)
-	elim_pieces = [] # redundant pieces list
+	elim = set() # redundant pieces
 
 	overmat = [[0] * N for i in range(0,N)] # overlap matrix
 
@@ -257,35 +242,40 @@ def setup(obs):
 
 			# mark redundant piece if we find any
 			if (i != j) and (obs_i in obs_j):
-				elim_pieces.append(i)
+				elim.add(i)
 
 			overmat[i][j] = overlap(obs_i, obs_j)
 
-	# eliminate initial pieces with complete overlap to reduce search space
-	free = [i for i in range(0, len(obs)) if i not in elim_pieces]
+	return overmat, elim
 
-	# logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim_pieces)
+# Prepares data structures for search: obs list, overlap matrix and free list for start node
+def setup(in_files):
+	logging.info('SETUP from %s...', list(in_files))
+
+	obs = make_obs(in_files)
+	overmat, elim = make_overmat(obs)
+	free = [i for i in range(0, len(obs)) if i not in elim] # eliminate initial pieces with complete overlap to reduce search space
+	context = Context(obs, overmat)
+
+	# logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim)
 	# logging.debug('overmat = %s', overmat)
 
 	logging.info('SETUP DONE')
-	return obs, overmat, free
-
+	return free, context
 
 # This is the main search algorithm.
 # It operates on the global graph and returns the computed solution string.
-def astar(free):
-	global g_obs
-
+def astar(free, context):
 	logging.info('ASTAR...')
 
 	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 
 	# initialize leaf list with the root node
 	# choose any obs as starting point for the solution
-	cost = len(g_obs[free[0]]) - g_overlap[0][0]
+	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	node0 = ReelNode([free[0]], free[1:], cost)
-	node0 = purify(node0)
-	node0.est = est(node0) # NOTE: this is only useful for debug output because there is no other node to choose from at first
+	node0 = purify(node0, context)
+	node0.est = est(node0, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
 
 	leaf = [node0]
 
@@ -298,7 +288,7 @@ def astar(free):
 	# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	while(cursor.free):
-		for s in successor(cursor):
+		for s in successor(cursor, context):
 			heapq.heappush(leaf, s)
 		# 	min_est = min(s.est, min_est) # DEBUG tracking
 		# 	max_est = max(s.est, max_est) # DEBUG tracking
@@ -311,23 +301,16 @@ def astar(free):
 		# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	logging.info('ASTAR DONE')
-	return final_solution(cursor.sequence)
+	return final_solution(cursor.sequence, context)
 
 # Program entry point
 def main():
-	global g_out_file
-	global g_files
-	global g_obs
-	global g_overlap
+	in_files, out_file = handle_args()
+	free, context = setup(in_files)
+	result = astar(free, context)
 
-	handle_args()
-
-	g_obs = read_obs(g_files)
-	g_obs, g_overlap, free = setup(g_obs)
-	result = astar(free)
-
-	if g_out_file:
-		out_file = io.open(g_out_file, 'a')
+	if out_file:
+		out_file = io.open(out_file, 'a')
 		out_file.write(result + '\n')
 		out_file.close()
 	else:
