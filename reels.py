@@ -185,6 +185,8 @@ def purify(node, context):
 
 # Parse and handle command arguments
 def handle_args():
+	import multiprocessing
+	
 	parser = argparse.ArgumentParser(description='''
 Reads input from FILES in order and writes a one-line result for each input file to OUTPUT.
 If no input files are specified, reads from standard input.
@@ -192,15 +194,15 @@ If no output files are specified, writes to standard output.
 		''')
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
 	parser.add_argument('-o', '--out_file', help='append solution to this file')
-	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS) #, help='debug log level')
+	parser.add_argument('-p', '--processes', type=int, default=multiprocessing.cpu_count(), help='number of parallel worker processes to use')
+	parser.add_argument('-s', '--size', type=int, default=100, help='number of paths to produce as a unit of work in one worker process')
+	parser.add_argument('-d', '--debug', dest='log_level', action='store_const', const=logging.DEBUG, default=logging.WARNING, help=argparse.SUPPRESS)
 
 	args = parser.parse_args()
-	files = args.files
-	out_file = args.out_file
-	if args.debug: logging.basicConfig(level=logging.DEBUG)
-	else:          logging.basicConfig(level=logging.WARNING)
 
-	return files, out_file
+	logging.basicConfig(level=args.log_level, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s', datefmt='%T')
+
+	return args.files, args.out_file, args.processes, args.size
 
 # Reads reel observations from the files in the parameter list.
 # Returns the resulting list of observations.
@@ -263,51 +265,114 @@ def setup(in_files):
 	logging.info('SETUP DONE')
 	return free, context
 
+# This function runs a parallelizable unit of work in the search algorithm.
+# It searches from the root node until it either finds a goal or the local number
+# of open paths (leaves) goes above the given size.
+# The return value is a heap of all open leaves if no goal was found, or a
+# one-element list containing only the cheapest goal.
+# TODO: test those conditions (atm it just does one search step)
+def astar_part(root, size):
+	import os
+
+	global g_context
+
+	logger = logging.getLogger(str(os.getpid()))
+
+	# obs, overmat = g_context
+	logger.debug('START work on %s', root)
+
+	leaf = [root]
+
+	while 0 < len(leaf) < size:
+		cursor = heapq.heappop(leaf)
+		if not cursor.free:    # this is goal node
+			return [cursor]
+
+		for s in successor(cursor, g_context):
+			heapq.heappush(leaf, s)
+
+	logger.debug('DONE => %s leaves', len(leaf))
+
+	return leaf
+
 # This is the main search algorithm.
-# It operates on the global graph and returns the computed solution string.
-def astar(free, context):
+# It searches the problem space (tree) for the cheapest goal, starting from the root, and returns one such goal node.
+# It uses N child processes as workers, where N is given in the workers parameter.
+# One unit of work that is delegated to a child process is bounded approximately by the size given in the size parameter.
+def astar(root, context, workers, size):
+	import concurrent.futures
+
+	global g_context
+
 	logging.info('ASTAR...')
 
-	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
+	g_context = context  # prepare global to be used by all child processes
 
-	# initialize leaf list with the root node
-	# choose any obs as starting point for the solution
-	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	node0 = ReelNode([free[0]], free[1:], cost)
-	node0 = purify(node0, context)
-	node0.est = est(node0, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
-
-	leaf = [node0]
+	leaf = [root]                     # heap of open nodes to explore
+	future = set()                    # searching processes
+	goal = ReelNode([],[],0)
+	goal.est = sum(map(len,context.obs))   # upper bound for goal nodes
 
 	# n_leaf = 100 # DEBUG counter for leaves
-	# min_est = node0.est
-	# max_est = node0.est
+	# min_est = root.est
+	# max_est = root.est
 
-	# start of search
-	cursor = heapq.heappop(leaf)
-	# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
+	with concurrent.futures.ProcessPoolExecutor(workers) as executor:
+		f = executor.submit(astar_part, heapq.heappop(leaf), workers) # in first iteration, generate just enough size=children to feed the workers
+		future.add(f)     # start of search
 
-	while(cursor.free):
-		for s in successor(cursor, context):
-			heapq.heappush(leaf, s)
-		# 	min_est = min(s.est, min_est) # DEBUG tracking
-		# 	max_est = max(s.est, max_est) # DEBUG tracking
+		while(future):
+			logging.debug('Waiting for %s astar_parts...', len(future))
 
-		# if len(leaf) > n_leaf:           # DEBUG report mem usage
-		# 	logging.debug('len(leaf) = %s (d: %s ~ %s)', len(leaf), min_est, max_est)
-		# 	n_leaf = len(leaf) * 1.5
+			done, future = concurrent.futures.wait(future, return_when=concurrent.futures.FIRST_COMPLETED)
 
-		cursor = heapq.heappop(leaf)
-		# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
+			logging.debug('... %s DONE', len(done))
+
+			for f in done:
+				leaf = heapq.merge(leaf, f.result())
+
+			leaf = list(leaf)
+
+			logging.debug('Now %s leaves', len(leaf))
+
+			# The more new_tasks we handle at once, the better the parallelization.
+			# However, we also risk that more work goes to waste because of exploring suboptimal paths.
+			i = len(future)
+			while i < workers and leaf:
+				cursor = heapq.heappop(leaf)
+				if cursor.est < goal.est:
+					if cursor.free:
+						f = executor.submit(astar_part, cursor, size)
+						future.add(f)
+						i = i + 1
+					else:
+						goal = cursor
+
+			# 	min_est = min(s.est, min_est) # DEBUG tracking
+			# 	max_est = max(s.est, max_est) # DEBUG tracking
+
+			# if len(leaf) > n_leaf:           # DEBUG report mem usage
+			# 	logging.debug('len(leaf) = %s (d: %s ~ %s)', len(leaf), min_est, max_est)
+			# 	n_leaf = len(leaf) * 1.5
+
+			# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	logging.info('ASTAR DONE')
-	return final_solution(cursor.sequence, context)
+	return goal
 
 # Program entry point
 def main():
-	in_files, out_file = handle_args()
+	in_files, out_file, workers, size = handle_args()
 	free, context = setup(in_files)
-	result = astar(free, context)
+
+	# initialize the root node
+	cost = len(context.obs[free[0]]) - context.overmat[0][0]
+	root = ReelNode([free[0]], free[1:], cost)
+	root = purify(root, context)
+	root.est = est(root, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
+
+	goal = astar(root, context, workers, size)
+	result = final_solution(goal.sequence, context)
 
 	if out_file:
 		out_file = io.open(out_file, 'a')
