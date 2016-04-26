@@ -1,7 +1,7 @@
 #!/usr/bin/env pypy3
 # -*- coding: UTF-8 -*-
 
-# Some tests for the reels.py module
+'''Some tests for the reels.py module.'''
 
 import reels
 import logging

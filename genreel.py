@@ -1,12 +1,16 @@
 #!/usr/bin/env python
-# random generator for reels.py problems
-# usage: genreel.py <reel size> <obs count> <obs min size> <obs max size>
+# -*- coding: UTF-8 -*-
+
+'''
+Random generator for reels.py problems
+usage: genreel.py <reel size> <obs count> <obs min size> <obs max size>
+'''
 
 import argparse
 import random
 
 def make_pool(S):
-	if S > 36: raise RuntimeError('More than 36 symbols not implemented')
+	if S > 36: raise NotImplementedError('More than 36 symbols not implemented')
 
 	for i in range(0,10):
 		if i < S: yield str(i)
@@ -23,8 +27,8 @@ def make_reel(N,S):
 	R = sample_pool(pool,N)
 	return ''.join(R)
 
-# Simple method: take N random rubstrings from reel of length 3-8 symbols
 def obs_random(reel,N):
+	'''Simple method: take N random rubstrings from reel of length 3-8 symbols'''
 	R = len(reel)
 	reeloop = reel*2
 	for i in range(0,N):
@@ -32,9 +36,10 @@ def obs_random(reel,N):
 		k = random.randint(0,R)
 		yield reeloop[k:k+L]
 
-# Generates observations with small overlap.
-# Method: cut the reel into segments at random cut points, each of which becomes a piece, with a predefined overlap of 2
 def obs_min_overlap(reel,N):
+	'''Generate observations with small overlap.
+	Method: cut the reel into segments at random cut points, each of which becomes a piece, with a predefined overlap of 2
+	'''
 	R = len(reel)
 	cuts = random.sample(range(0,R), N)
 	cuts.sort()
@@ -48,10 +53,11 @@ def obs_min_overlap(reel,N):
 
 		yield (reel*2)[low:high]
 
-# Generates len(reel) observations with largest possible overlap.
-# Method: for every observation, one symbol is left out of the reel.
-# The number of observations (N) is ignored.
 def obs_max_overlap(reel,N):
+	'''Generates len(reel) observations with largest possible overlap.
+	Method: for every observation, one symbol is left out of the reel.
+	The number of observations (N) is ignored.
+	'''
 	for i in range(0,len(reel)):
 		yield reel[i+1:] + reel[:i]
 
@@ -75,8 +81,8 @@ def random_observations(sym_count, reel_size, obs_count, method): # , obs_min, o
 	random.shuffle(obs)      # input order should not matter, but shuffle just to be safe
 	return (reel, obs)
 
-# start the bus
 def main():
+	'''start the bus'''
 	args = handle_args()
 	reel, obs = random_observations(*args)
 

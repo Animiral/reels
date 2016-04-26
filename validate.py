@@ -1,24 +1,20 @@
 #!/usr/bin/env pypy3
 # -*- coding: UTF-8 -*-
 
-g_desc = '''
+'''
 This is a validator for reels.py. It does nothing more than check the output of reels.py for two things:
  1) Every input piece must occur in the output string.
  2) The output string must not be longer than the sum of input lengths.
 '''
-
-# usage:
 
 import sys
 import io
 import argparse
 import reels
 
-# Parse and handle command arguments
 def handle_args():
-	global g_desc
-
-	parser = argparse.ArgumentParser(description=g_desc)
+	'''Parse and handle command arguments.'''
+	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
 	parser.add_argument('-o', '--out_file', required=True, help='reels output file (last line contains solution)')
 	parser.add_argument('-s', '--solution', help='reference solution string - if provided, length and loop-invariant match is checked')
@@ -26,9 +22,10 @@ def handle_args():
 	args = parser.parse_args()
 	return args.files, args.out_file, args.solution
 
-# Reads reels.py output solution from out_file.
-# We assume that the last non-empty line in the output file is the solution that we want to check against.
 def read_solution(out_file):
+	'''Read reels.py output solution from out_file.
+	We assume that the last non-empty line in the output file is the solution that we want to check against.
+	'''
 	f = io.open(out_file,'r')
 	lines = f.read().splitlines()
 	for L in reversed(lines):
