@@ -1,22 +1,24 @@
 #!/usr/bin/env pypy3
 # -*- coding: UTF-8 -*-
 
-# The file README contains a general description of the program. Read on for implementation details.
+'''
+The file README contains a general description of the program. Read on for implementation details.
 
-# reels.py is an A* search algorithm.
+reels.py is an A* search algorithm.
 
-# Nodes in the search graph consist of a partial solution built of one or more observed pieces and a list of free pieces, which are not yet represented in the solution.
-# In the start node, the partial solution contains only the largest single observed piece of the reel. All other pieces are free.
-# In the goal nodes, the solution is a complete sequence of observed pieces, some possibly overlapping with the next. The free list is empty.
+Nodes in the search graph consist of a partial solution built of one or more observed pieces and a list of free pieces, which are not yet represented in the solution.
+In the start node, the partial solution contains only the largest single observed piece of the reel. All other pieces are free.
+In the goal nodes, the solution is a complete sequence of observed pieces, some possibly overlapping with the next. The free list is empty.
 
-# To move from one node to the next, the program appends a free piece to the left or right of the partial solution.
-# The cost of the edge is the number of additional symbols in the partial solution after the operation.
-# Overlapping observations are therefore preferred to find a short solution.
+To move from one node to the next, the program appends a free piece to the left or right of the partial solution.
+The cost of the edge is the number of additional symbols in the partial solution after the operation.
+Overlapping observations are therefore preferred to find a short solution.
 
-# To help with determining the cheapest path, the program uses an NxN matrix g_overlap, where N is the number of observed pieces.
-# g_overlap[i][j] is the number of overlapping symbols when appending g_obs[j] to the right of g_obs[i].
+To help with determining the cheapest path, the program uses an NxN matrix g_overlap, where N is the number of observed pieces.
+g_overlap[i][j] is the number of overlapping symbols when appending g_obs[j] to the right of g_obs[i].
 
-# The heuristic function (estimated distance to goal) is the sum of minimum costs using g_overlap_left and g_overlap_right for every free piece.
+The heuristic function (estimated distance to goal) is the sum of minimum costs using g_overlap_left and g_overlap_right for every free piece.
+'''
 
 import sys
 import io
@@ -35,8 +37,8 @@ Context = collections.namedtuple('Context', ['obs', 'overmat'])
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
-# Returns the number of overlapping symbols when appending the right piece to the left piece
 def overlap(left, right):
+	'''Return the number of overlapping symbols when appending the right piece to the left piece.'''
 	max_overlap = min(len(left),len(right)) - 1 # legal pieces can not overlap whole
 
 	for i in range(max_overlap, 0, -1):
@@ -45,8 +47,8 @@ def overlap(left, right):
 	else:
 		return 0
 
-# Returns the solution string from a list of obs indices representation
 def solution(sequence, context):
+	'''Return the solution string from a list of obs indices representation.'''
 	obs, overmat = context
 
 	prev_index = sequence[0]
@@ -60,10 +62,11 @@ def solution(sequence, context):
 
 	return S
 
-# Returns the final solution string from a list of obs indices representation.
-# The difference to an intermediate solution is that due to its looped nature,
-# overlap between the first and last piece can cut off some characters in the final solution.
 def final_solution(sequence, context):
+	'''Return the final solution string from a list of obs indices representation.
+	The difference to an intermediate solution is that due to its looped nature,
+	overlap between the first and last piece can cut off some characters in the final solution.
+	'''
 	S = solution(sequence, context)
 
 	loop_overlap = context.overmat[sequence[-1]][sequence[0]] # Careful: don’t repeat the start of the solution if it overlaps with the end piece
@@ -72,43 +75,43 @@ def final_solution(sequence, context):
 	else:
 		return S 
 
-# The nodes in the search graph are partially solved reel problems.
-# A node is impure if any one free piece is a proper substring of the partial solution.
-# In that case, it should be purified before searching on.
-# For two nodes n1 and n2, (not n1 < n2) and (not n1 > n2) is not equivalent to n1 == n2.
-# This is deliberate because node equality and ordering are used for different, unrelated purposes.
 class ReelNode:
-	sequence = [] # list of the observations included in the solution (in order)
-	free = []     # set of free observations (also a list)
-	cost = 0      # path cost of the partial solution that is the sequence = number of symbols in solution(sequence).
-	est = 0       # (under-)estimated number of symbols in the solution reel, if we explore further expansions from this node
+	'''The nodes in the search graph are partially solved reel problems.
+	A node is impure if any one free piece is a proper substring of the partial solution.
+	In that case, it should be purified before searching on.
+	For two nodes n1 and n2, (not n1 < n2) and (not n1 > n2) is not equivalent to n1 == n2.
+	This is deliberate because node equality and ordering are used for different, unrelated purposes.
+	'''
 
 	def __init__(self,s,f,c):
-		self.sequence = s
-		self.free = f
-		self.cost = c
+		self.sequence = s     # list of the observations included in the solution (in order)
+		self.free = f         # set of free observations (also a list)
+		self.cost = c         # path cost of the partial solution that is the sequence = number of symbols in solution(sequence).
+		self.est = sys.maxint # estimated total path cost through this node to the goal
 
-	# String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces
 	def __str__(self):
+		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
 		return 'ReelNode({0},{1})'.format(self.sequence, self.free)
 
-	# Ordering for leaf heap.
 	def __lt__(self, other):
+		'''Ordering for leaf heap.'''
 		if self.est == other.est:
 			return len(self.sequence) > len(other.sequence) # if tied, prefer to examine more complete solutions first
 		else:
 			return self.est < other.est
 
-	# Equality: used for the node hash table in ReelGraph.
-	# Nodes may be re-discovered with lower est, but they must still go in the same hash bucket.
 	def __eq__(self, other):
+		'''Equality: used for the node hash table in ReelGraph.
+		Nodes may be re-discovered with lower est, but they must still go in the same hash bucket.
+		'''
 		return self.sequence == other.sequence and self.free == other.free
 
-	# Node hashing: XOR the bits of every item in the partial solution and the free list.
-	# The bits are rotated around the integer after each XOR to make better use of the available space in the higher-order bits.
-	# Partial solution and free list use different rotation phases so that moving the
-	# first free piece to the end of the partial solution will produce a different hash.
 	def __hash__(self):
+		'''Node hashing: XOR the bits of every item in the partial solution and the free list.
+		The bits are rotated around the integer after each XOR to make better use of the available space in the higher-order bits.
+		Partial solution and free list use different rotation phases so that moving the
+		first free piece to the end of the partial solution will produce a different hash.
+		'''
 		h = 0
 
 		for s in self.sequence:
@@ -119,15 +122,16 @@ class ReelNode:
 
 		return h
 
-# Returns the est of a node f(n) = g(n) + h(n), where g is the cost so far and h is the estimated cost to goal.
-# g(n) is the number of symbols in the partial solution which are certainly a unique part of the final solution.
-# Some possible overlapping symbols between the last and first piece of the partial solution are not counted
-# towards the cost so far because even with some free pieces left over, the final reel might already be complete.
-# h(n) is the estimated number of symbols that the free pieces are going to contribute towards the final reel.
-# As an optimistic guess, we assume that every free piece will be placed such that it achieves optimal overlap
-# with another piece to the left. The other piece could be any of the other free pieces or the tail of the sequence.
-# Additionally, we discount a number of symbols according to the best possible overlap to the head of the sequence.
 def est(node, context):
+	'''Return the est of a node f(n) = g(n) + h(n), where g is the cost so far and h is the estimated cost to goal.
+	g(n) is the number of symbols in the partial solution which are certainly a unique part of the final solution.
+	Some possible overlapping symbols between the last and first piece of the partial solution are not counted
+	towards the cost so far because even with some free pieces left over, the final reel might already be complete.
+	h(n) is the estimated number of symbols that the free pieces are going to contribute towards the final reel.
+	As an optimistic guess, we assume that every free piece will be placed such that it achieves optimal overlap
+	with another piece to the left. The other piece could be any of the other free pieces or the tail of the sequence.
+	Additionally, we discount a number of symbols according to the best possible overlap to the head of the sequence.
+	'''
 	obs, overmat = context
 
 	G = node.cost
@@ -151,8 +155,8 @@ def est(node, context):
 
 	return G + H
 
-# Generates all successors to the given node
 def successor(node, context):
+	'''Generate all successors to the given node.'''
 	obs, overmat = context
 
 	overlap = 0
@@ -173,9 +177,10 @@ def successor(node, context):
 
 		yield succ
 
-# From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
-# These pieces do not have to be considered any longer and may even introduce errors.
 def purify(node, context):
+	'''From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
+	These pieces do not have to be considered any longer and may even introduce errors.
+	'''
 	obs = context.obs
 	sol = solution(node.sequence, context)
 	not_redundant = lambda f: obs[f] not in sol
@@ -183,8 +188,8 @@ def purify(node, context):
 
 	return node
 
-# Parse and handle command arguments
 def handle_args():
+	'''Parse and handle command arguments.'''
 	parser = argparse.ArgumentParser(description='''
 Reads input from FILES in order and writes a one-line result for each input file to OUTPUT.
 If no input files are specified, reads from standard input.
@@ -202,9 +207,10 @@ If no output files are specified, writes to standard output.
 
 	return files, out_file
 
-# Reads reel observations from the files in the parameter list.
-# Returns the resulting list of observations.
 def make_obs(*in_files):
+	'''Reads reel observations from the files in the parameter list.
+	Returns the resulting list of observations.
+	'''
 	obs = []
 
 	for line in fileinput.input(*in_files):
@@ -230,6 +236,13 @@ def make_obs(*in_files):
 	return obs
 
 def make_overmat(obs):
+	'''Construct the overlap matrix from the list of observations.
+	The overlap matrix is an NxN array of arrays such that overmat[i][j] is the maximum number of symbols
+	that can be overlapped when appending obs[j] to the right of obs[i].
+	As a byproduct, this function notes a set of obs pieces which are substrings of some other piece and
+	thus redundant. The members of the elim set are indexes into obs.
+	The return value of make_overmat is (overmat, elim).
+	'''
 	N = len(obs)
 	elim = set() # redundant pieces
 
@@ -248,8 +261,8 @@ def make_overmat(obs):
 
 	return overmat, elim
 
-# Prepares data structures for search: obs list, overlap matrix and free list for start node
 def setup(in_files):
+	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
 	logging.info('SETUP from %s...', list(in_files))
 
 	obs = make_obs(in_files)
@@ -263,9 +276,10 @@ def setup(in_files):
 	logging.info('SETUP DONE')
 	return free, context
 
-# This is the main search algorithm.
-# It operates on the global graph and returns the computed solution string.
 def astar(free, context):
+	'''This is the main search algorithm.
+	It operates on the global graph and returns the computed solution string.
+	'''
 	logging.info('ASTAR...')
 
 	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
@@ -303,8 +317,8 @@ def astar(free, context):
 	logging.info('ASTAR DONE')
 	return final_solution(cursor.sequence, context)
 
-# Program entry point
 def main():
+	'''Program entry point.'''
 	in_files, out_file = handle_args()
 	free, context = setup(in_files)
 	result = astar(free, context)

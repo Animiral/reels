@@ -3,7 +3,7 @@
 #!/usr/bin/env jython
 #!/usr/bin/env python
 
-# This script runs the cProfile profiler on reels.py.
+'''Runs the cProfile profiler on reels.py.'''
 
 import sys
 import reels
@@ -40,8 +40,8 @@ def median(a):
 	else:
 		return a[N/2]
 
-# returns median time
 def time_reels(print_stuff):
+	'''Returns median time.'''
 	import time
 
 	N_RUNS = 20
