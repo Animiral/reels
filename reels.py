@@ -84,10 +84,10 @@ class ReelNode:
 	'''
 
 	def __init__(self,s,f,c):
-		self.sequence = s     # list of the observations included in the solution (in order)
-		self.free = f         # set of free observations (also a list)
-		self.cost = c         # path cost of the partial solution that is the sequence = number of symbols in solution(sequence).
-		self.est = sys.maxint # estimated total path cost through this node to the goal
+		self.sequence = s      # list of the observations included in the solution (in order)
+		self.free = f          # set of free observations (also a list)
+		self.cost = c          # path cost of the partial solution that is the sequence = number of symbols in solution(sequence).
+		self.est = sys.maxsize # estimated total path cost through this node to the goal
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
@@ -276,26 +276,17 @@ def setup(in_files):
 	logging.info('SETUP DONE')
 	return free, context
 
-def astar(free, context):
+def astar(root, context):
 	'''This is the main search algorithm.
 	It operates on the global graph and returns the computed solution string.
 	'''
 	logging.info('ASTAR...')
 
-	leaf = []   # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
-
-	# initialize leaf list with the root node
-	# choose any obs as starting point for the solution
-	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	node0 = ReelNode([free[0]], free[1:], cost)
-	node0 = purify(node0, context)
-	node0.est = est(node0, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
-
-	leaf = [node0]
+	leaf = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 
 	# n_leaf = 100 # DEBUG counter for leaves
-	# min_est = node0.est
-	# max_est = node0.est
+	# min_est = root.est
+	# max_est = root.est
 
 	# start of search
 	cursor = heapq.heappop(leaf)
@@ -321,7 +312,16 @@ def main():
 	'''Program entry point.'''
 	in_files, out_file = handle_args()
 	free, context = setup(in_files)
-	result = astar(free, context)
+
+	# Build root node
+	# initialize leaf list with the root node
+	# choose any obs as starting point for the solution
+	cost = len(context.obs[free[0]]) - context.overmat[0][0]
+	root = ReelNode([free[0]], free[1:], cost)
+	root = purify(root, context)
+	root.est = est(root, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
+
+	result = astar(root, context)
 
 	if out_file:
 		out_file = io.open(out_file, 'a')

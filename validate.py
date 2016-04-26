@@ -37,7 +37,7 @@ def read_solution(out_file):
 
 def main():
 	files, out_file, reference = handle_args()
-	obs = reels.read_obs(files)
+	obs = reels.make_obs(files)
 	sol = read_solution(out_file)
 
 	valid = True
