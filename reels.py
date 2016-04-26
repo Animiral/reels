@@ -172,21 +172,9 @@ def successor(node, context):
 		cost = node.cost + len(obs[P]) + overmat[Z][A] - overmat[Z][P] - overmat[P][A]
 
 		succ = ReelNode(sequence, free, cost)
-		if free: succ = purify(succ, context)
 		succ.est = est(succ, context)
 
 		yield succ
-
-def purify(node, context):
-	'''From a candidate graph node, removes every free piece that is a proper substring of the partial solution.
-	These pieces do not have to be considered any longer and may even introduce errors.
-	'''
-	obs = context.obs
-	sol = solution(node.sequence, context)
-	not_redundant = lambda f: obs[f] not in sol
-	node.free = list(filter(not_redundant, node.free))
-
-	return node
 
 def handle_args():
 	'''Parse and handle command arguments.'''
@@ -318,7 +306,6 @@ def main():
 	# choose any obs as starting point for the solution
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = ReelNode([free[0]], free[1:], cost)
-	root = purify(root, context)
 	root.est = est(root, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
 
 	result = astar(root, context)

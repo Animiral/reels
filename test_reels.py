@@ -13,7 +13,6 @@ def test():
 	test_overlap()
 	test_solution()
 	test_est()
-	test_purify()
 	test_successor()
 
 	logging.info('TEST DONE')
@@ -96,38 +95,6 @@ def test_est():
 			sys.stderr.write('OK\n')
 		else:
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-def test_purify():
-	sys.stderr.write('Test purify(node):\n')
-
-	def _run():
-		for c in cases:
-			node, expected = c
-			sys.stderr.write('\tpurify({0}) == {1}: '.format(node,expected))
-			actual = reels.purify(node, context)
-			if actual == expected: 
-				sys.stderr.write('OK\n')
-			else:                  
-				sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-	obs = ['abc','cde','bcd','ac']
-	overmat = [[0,1,2,0],[0,0,0,0],[0,2,0,0],[0,1,0,0]]
-	context = reels.Context(obs, overmat)
-	cases = [
-		(reels.ReelNode([0,1],[2,3],5),reels.ReelNode([0,1],[3],5)),
-		(reels.ReelNode([2,0],[1,3],6),reels.ReelNode([2,0],[1,3],6))
-	]
-
-	_run()
-
-	obs=['AAA', 'AAB', 'ABBCA', 'CAAB', 'BB']
-	overmat = [[2, 2, 1, 0, 0], [0, 0, 2, 0, 1], [1, 1, 1, 2, 0], [0, 3, 2, 0, 1], [0, 0, 0, 0, 1]]
-	context = reels.Context(obs, overmat)
-	cases = [
-		(reels.ReelNode([2],[0,1,2,3,4],5),reels.ReelNode([2],[0,1,3],5))
-	]
-
-	_run()
 
 def test_successor():
 	sys.stderr.write('Test successor(node):\n')

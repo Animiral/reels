@@ -11,13 +11,21 @@ import genreel
 import pstats
 
 def reels_astar_wrapper():
-	reels_astar_wrapper.result = reels.astar(reels_astar_wrapper.free, reels_astar_wrapper.context)
+	reels_astar_wrapper.result = reels.astar(reels_astar_wrapper.root, reels_astar_wrapper.context)
 
 def profile_reels():
 	import cProfile
 
 	in_files, out_file = reels.handle_args()
-	reels_astar_wrapper.free, reels_astar_wrapper.context = reels.setup(in_files)
+	free, context = reels.setup(in_files)
+
+	# Build root node
+	# initialize leaf list with the root node
+	# choose any obs as starting point for the solution
+	cost = len(context.obs[free[0]]) - context.overmat[0][0]
+	root = reels.ReelNode([free[0]], free[1:], cost)
+
+	reels_astar_wrapper.root, reels_astar_wrapper.context = root, context
 
 	pro_file = 'out.profile'
 	cProfile.run('reels_astar_wrapper()', pro_file)
@@ -53,8 +61,15 @@ def time_reels(print_stuff):
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
 		free, context = reels.setup(in_files)
+
+		# Build root node
+		# initialize leaf list with the root node
+		# choose any obs as starting point for the solution
+		cost = len(context.obs[free[0]]) - context.overmat[0][0]
+		root = reels.ReelNode([free[0]], free[1:], cost)
+
 		t0 = time.time()
-		result = reels.astar(free, context)
+		result = reels.astar(root, context)
 		t1 = time.time()
 		measurements.append(t1-t0)
 

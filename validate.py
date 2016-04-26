@@ -41,6 +41,7 @@ def main():
 	sol = read_solution(out_file)
 
 	valid = True
+	alt_solution = False    # turns to True if the output solution is valid, but different from the reference solution
 
 	for O in obs:
 		if not O in (sol*2):
@@ -56,8 +57,8 @@ def main():
 			valid = False
 		else:
 			if not (reference in (sol*2) and sol in (reference*2)):
-				sys.stdout.write('Solution does not match reference. (output="{0}"; reference="{1}")\n'.format(sol, reference))
 				# Solution still passes if the reference happens not to be the only or optimal solution
+				alt_solution = True
 
 	else:
 		len_sol = len(sol)
@@ -68,7 +69,11 @@ def main():
 			valid = False
 
 	if valid:
-		sys.stdout.write('PASSED\n')
+		if alt_solution:
+			# sys.stdout.write('Solution does not match reference. (output="{0}"; reference="{1}")\n'.format(sol, reference))
+			sys.stdout.write('PASSED*\n')
+		else:
+			sys.stdout.write('PASSED\n')
 	else:
 		sys.stdout.write('FAILED\n')
 
