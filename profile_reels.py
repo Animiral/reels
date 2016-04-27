@@ -21,14 +21,14 @@ def profile_reels():
 	# initialize leaf list with the root node
 	# choose any obs as starting point for the solution
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	root = reels.ReelNode([free[0]], free[1:], cost)
+	root = reels.ReelNode([free[0]], free[1:], cost, context)
 
 	def print_goal_file(goal):
-		solution_str = reels.final_solution(goal.sequence, context)
+		solution_str = goal.final_solution(context)
 		out_fd.write(solution_str + '\n')
 
 	def print_goal_stdout(goal):
-		solution_str = reels.final_solution(goal.sequence, context)
+		solution_str = goal.final_solution(context)
 		sys.stdout.write(solution_str + '\n')
 
 	def _run(search, root, context, goal_callback):
@@ -73,7 +73,7 @@ def time_reels(print_stuff):
 		# initialize leaf list with the root node
 		# choose any obs as starting point for the solution
 		cost = len(context.obs[free[0]]) - context.overmat[0][0]
-		root = reels.ReelNode([free[0]], free[1:], cost)
+		root = reels.ReelNode([free[0]], free[1:], cost, context)
 
 		t0 = time.time()
 		result = search(root, context, mute_goal)
