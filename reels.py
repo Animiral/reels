@@ -100,27 +100,27 @@ class ReelNode:
 		else:
 			return self.est < other.est
 
-	def __eq__(self, other):
-		'''Equality: used for the node hash table in ReelGraph.
-		Nodes may be re-discovered with lower est, but they must still go in the same hash bucket.
-		'''
-		return self.sequence == other.sequence and self.free == other.free
+	# def __eq__(self, other):
+	# 	'''Equality: used for the node hash table in ReelGraph.
+	# 	Nodes may be re-discovered with lower est, but they must still go in the same hash bucket.
+	# 	'''
+	# 	return self.sequence == other.sequence and self.free == other.free
 
-	def __hash__(self):
-		'''Node hashing: XOR the bits of every item in the partial solution and the free list.
-		The bits are rotated around the integer after each XOR to make better use of the available space in the higher-order bits.
-		Partial solution and free list use different rotation phases so that moving the
-		first free piece to the end of the partial solution will produce a different hash.
-		'''
-		h = 0
+	# def __hash__(self):
+	# 	'''Node hashing: XOR the bits of every item in the partial solution and the free list.
+	# 	The bits are rotated around the integer after each XOR to make better use of the available space in the higher-order bits.
+	# 	Partial solution and free list use different rotation phases so that moving the
+	# 	first free piece to the end of the partial solution will produce a different hash.
+	# 	'''
+	# 	h = 0
 
-		for s in self.sequence:
-			h = ((h << 4) ^ (h >> 28)) ^ s
+	# 	for s in self.sequence:
+	# 		h = ((h << 4) ^ (h >> 28)) ^ s
 
-		for f in self.free:
-			h = ((h << 5) ^ (h >> 27)) ^ s
+	# 	for f in self.free:
+	# 		h = ((h << 5) ^ (h >> 27)) ^ s
 
-		return h
+	# 	return h
 
 def est(node, context):
 	'''Return the est of a node f(n) = g(n) + h(n), where g is the cost so far and h is the estimated cost to goal.
@@ -185,15 +185,14 @@ If no output files are specified, writes to standard output.
 		''')
 	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
 	parser.add_argument('-o', '--out_file', help='append solution to this file')
+	parser.add_argument('-a', '--algorithm', choices=['astar','dfs'], default='astar', help='search algorithm to use')
 	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS) #, help='debug log level')
 
 	args = parser.parse_args()
-	files = args.files
-	out_file = args.out_file
 	if args.debug: logging.basicConfig(level=logging.DEBUG)
 	else:          logging.basicConfig(level=logging.WARNING)
 
-	return files, out_file
+	return args.files, args.out_file, args.algorithm
 
 def make_obs(*in_files):
 	'''Reads reel observations from the files in the parameter list.
@@ -264,9 +263,10 @@ def setup(in_files):
 	logging.info('SETUP DONE')
 	return free, context
 
-def astar(root, context):
+def astar(root, context, goal_callback):
 	'''This is the main search algorithm.
-	It operates on the global graph and returns the computed solution string.
+	It finds the optimal solution and calls goal_callback once with the goal as parameter.
+	The goal node is also returned.
 	'''
 	logging.info('ASTAR...')
 
@@ -294,12 +294,41 @@ def astar(root, context):
 		# logging.debug('Examine d=%s\tf(n)=%s\t%s\t%s)', len(cursor.sequence), cursor.est, solution(cursor.sequence), cursor)
 
 	logging.info('ASTAR DONE')
-	return final_solution(cursor.sequence, context)
+	goal_callback(cursor)
+
+	return cursor
+
+def dfs(root, context, goal_callback, limit=sys.maxsize):
+	'''An alternative greedy depth-first search algorithm.
+	It produces solutions very quickly at first, but doesn’t offer the guarantee of an optimal solution.
+	The program will keep running even after a solution has been found and keep producing better solutions,
+	if it finds any, until the entire search space is exhausted.
+	The optional limit parameter specifies a lower bound on the cost of a viable solution.
+	Only goals below this limit are considered.
+	'''
+
+	# dummy goal, inferior to any actual goal found
+	goal = type('DummyNode', (object,), {'est':limit})()
+	goal.est = limit
+
+	succ = sorted(successor(root, context))
+
+	for s in succ:
+		if s.free:
+			if s.est < limit:
+				goal = dfs(s, context, goal_callback, limit=goal.est)
+		else:
+			if s.est < goal.est:
+				goal = s
+				goal_callback(goal)
+
+	return goal
 
 def main():
 	'''Program entry point.'''
-	in_files, out_file = handle_args()
+	in_files, out_file, algorithm = handle_args()
 	free, context = setup(in_files)
+	search = getattr(sys.modules[main.__module__], algorithm)
 
 	# Build root node
 	# initialize leaf list with the root node
@@ -308,14 +337,20 @@ def main():
 	root = ReelNode([free[0]], free[1:], cost)
 	root.est = est(root, context) # NOTE: this is only useful for debug output because there is no other node to choose from at first
 
-	result = astar(root, context)
+	def print_goal_file(goal):
+		solution_str = final_solution(goal.sequence, context)
+		out_fd.write(solution_str + '\n')
+
+	def print_goal_stdout(goal):
+		solution_str = final_solution(goal.sequence, context)
+		sys.stdout.write(solution_str + '\n')
 
 	if out_file:
-		out_file = io.open(out_file, 'a')
-		out_file.write(result + '\n')
-		out_file.close()
+		out_fd = io.open(out_file, 'a')
+		search(root, context, print_goal_file)
+		out_fd.close()
 	else:
-		sys.stdout.write(result + '\n')
+		search(root, context, print_goal_stdout)
 
 if __name__ == "__main__":
 	main()

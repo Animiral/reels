@@ -10,14 +10,12 @@ import reels
 import genreel
 import pstats
 
-def reels_astar_wrapper():
-	reels_astar_wrapper.result = reels.astar(reels_astar_wrapper.root, reels_astar_wrapper.context)
-
 def profile_reels():
 	import cProfile
 
-	in_files, out_file = reels.handle_args()
+	in_files, out_file, algorithm = reels.handle_args()
 	free, context = reels.setup(in_files)
+	search = getattr(reels, algorithm)
 
 	# Build root node
 	# initialize leaf list with the root node
@@ -25,21 +23,26 @@ def profile_reels():
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = reels.ReelNode([free[0]], free[1:], cost)
 
-	reels_astar_wrapper.root, reels_astar_wrapper.context = root, context
+	def print_goal_file(goal):
+		solution_str = reels.final_solution(goal.sequence, context)
+		out_fd.write(solution_str + '\n')
 
-	pro_file = 'out.profile'
-	cProfile.run('reels_astar_wrapper()', pro_file)
-	result = reels_astar_wrapper.result 
+	def print_goal_stdout(goal):
+		solution_str = reels.final_solution(goal.sequence, context)
+		sys.stdout.write(solution_str + '\n')
+
+	def _run(search, root, context, goal_callback):
+		pro_file = 'out.profile'
+		cProfile.runctx('search(root, context, goal_callback)', globals(), locals(), pro_file)
+		p = pstats.Stats(pro_file)
+		p.strip_dirs().sort_stats('filename','line',).print_stats()
 
 	if out_file:
-		file = io.open(out_file, 'a')
-		file.write(result + '\n')
-		file.close()
+		out_fd = io.open(out_file, 'a')
+		_run(search, root, context, print_goal_file)
+		out_fd.close()
 	else:
-		sys.stdout.write(result + '\n')
-
-	p = pstats.Stats(pro_file)
-	p.strip_dirs().sort_stats('filename','line',).print_stats()
+		_run(search, root, context, print_goal_stdout)
 
 def median(a):
 	N = len(a)
@@ -54,9 +57,13 @@ def time_reels(print_stuff):
 
 	N_RUNS = 20
 
-	in_files, out_file = reels.handle_args()
+	in_files, out_file, algorithm = reels.handle_args()
+	search = getattr(reels, algorithm)
 
 	measurements = []
+
+	def mute_goal(goal):
+		pass # do not print anything
 
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
@@ -69,7 +76,7 @@ def time_reels(print_stuff):
 		root = reels.ReelNode([free[0]], free[1:], cost)
 
 		t0 = time.time()
-		result = reels.astar(root, context)
+		result = search(root, context, mute_goal)
 		t1 = time.time()
 		measurements.append(t1-t0)
 
