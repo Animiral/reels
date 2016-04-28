@@ -33,6 +33,10 @@ from collections import namedtuple
 # overmat is the overlap matrix of precomputed overlaps between observations.
 Context = namedtuple('Context', ['obs', 'overmat'])
 
+class AbortSearch(Exception):
+	'''Dummy exceptions used to get out of search after solution limit.'''
+	pass
+
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
 class ReelNode:
@@ -162,16 +166,19 @@ class ReelNode:
 
 # ------------------------------- end of class ReelNode ------------------------------- #
 
-def make_obs(*in_files):
+def make_obs(in_file):
 	'''Read reel observations from the files in the parameter list.
 	Return the resulting list of observations.
+
+	In this default implementation, every character on every line is a symbol.
+	There are no separators.
 	'''
 	import fileinput
 	import re
 
 	obs = []
 
-	for line in fileinput.input(*in_files):
+	for line in fileinput.input(in_file):
 		line = line.strip() # remove newline at the end
 		if not line: continue # ignore empty lines
 
@@ -187,6 +194,11 @@ def make_obs(*in_files):
 	obs.sort() # DEBUG: establish deterministic order of obs
 
 	return obs
+
+def make_obs_csv(in_file):
+	import csv
+
+	raise NotImplemented()
 
 def overlap(left, right):
 	'''Return the number of overlapping symbols when appending the right piece to the left piece.'''
@@ -220,12 +232,12 @@ def make_overmat(obs):
 
 	return overmat, elim
 
-def setup(in_files):
+def setup(in_file, make_obs_func):
 	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
 
-	logging.info('SETUP from %s...', list(in_files))
+	logging.info('SETUP from %s...', in_file)
 
-	obs = make_obs(in_files)
+	obs = make_obs_func(in_file)
 	overmat, elim = make_overmat(obs)
 	free = [i for i in range(0, len(obs)) if i not in elim] # eliminate initial pieces with complete overlap to reduce search space
 	context = Context(obs, overmat)
@@ -236,79 +248,113 @@ def setup(in_files):
 	logging.info('SETUP DONE')
 	return free, context
 
-def astar(root, context, goal_callback):
+def astar(root, context, goal_callback, limit, full):
 	'''This is the main search algorithm.
 	It finds the optimal solution and calls goal_callback once with the goal as parameter.
 	The goal node is also returned.
+
+	The limit parameter specifies a lower bound on the cost of a viable solution.
+	Only goals below this limit are considered.
+
+	solutions is the maximum number of solutions to produce. In the case of the A* algorithm,
+	it produces just one solution anyway, unless full is True.
+
+	If full is set to True, the search will return all qualified solutions instead of just one.
 	'''
 	logging.info('ASTAR...')
 
 	leaf = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 	cursor = heappop(leaf)
 
-	while(cursor.free):
-		for s in cursor.successor(context):
-			heappush(leaf, s)
+	while cursor.est <= limit:
+		if cursor.free:
+			for s in cursor.successor(context):
+				if s.est <= limit:
+					heappush(leaf, s)
+		else:
+			goal_callback(cursor)
+			if not full: break # one solution is enough
+			limit = cursor.est
 
 		cursor = heappop(leaf)
 
 	logging.info('ASTAR DONE')
-	goal_callback(cursor)
 
-	return cursor
-
-def dfs(root, context, goal_callback, limit=sys.maxsize):
+def dfs(root, context, goal_callback, limit, full):
 	'''An alternative greedy depth-first search algorithm.
 	It produces solutions very quickly at first, but doesn’t offer the guarantee of an optimal solution.
 	The program will keep running even after a solution has been found and keep producing better solutions,
 	if it finds any, until the entire search space is exhausted.
-	The optional limit parameter specifies a lower bound on the cost of a viable solution.
-	Only goals below this limit are considered.
 	'''
+	from operator import lt, le
 
 	# dummy goal, inferior to any actual goal found
 	goal = type('DummyNode', (object,), {'est':limit})()
 	goal.est = limit
+	op = le
 
-	succ = sorted(root.successor(context))
+	if not full:
+		op = lt
+		goal.est = goal.est + 1 # fix off-by-one for user-specified limit
 
-	for s in succ:
-		if s.free:
-			if s.est < limit:
-				goal = dfs(s, context, goal_callback, limit=goal.est)
-		else:
-			if s.est < goal.est:
-				goal = s
-				goal_callback(goal)
+# next: try stack dfs impl
+	# stack = [[root]]
 
-	return goal
+	# while stack:
+	# 	it = stack.pop()
+	# 	for node in it:
+
+
+	def _dfs(root, goal):
+		'''recursive depth search implementation'''
+		succ = sorted(root.successor(context))
+
+		for s in succ:
+			if op(s.est, goal.est):
+				if s.free:
+					goal = _dfs(s, goal)
+				else:
+					goal = s
+					goal_callback(goal)
+
+		return goal
+
+	_dfs(root, goal)
 
 def handle_args():
 	'''Parse and handle command arguments.'''
 	import argparse
 
 	parser = argparse.ArgumentParser(description='''
-		Reads input from FILES in order and writes a one-line result for each input file to OUTPUT.
-		If no input files are specified, reads from standard input.
-		If no output files are specified, writes to standard output.
+		Reads input from FILE and writes a one-line result to out_file.
+		If no input file is specified, reads from standard input.
+		If no output file is specified, writes to standard output.
 		''')
-	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
+	parser.add_argument('file', metavar='FILE', type=str, nargs='?', help='input file')
 	parser.add_argument('-o', '--out_file', help='append solution to this file')
 	parser.add_argument('-a', '--algorithm', choices=['astar','dfs'], default='astar', help='search algorithm to use')
+	parser.add_argument('--csv', dest='make_obs_func', action='store_const', const=make_obs_csv, default=make_obs, help='specify default input format as CSV')
+	parser.add_argument('-n', '--solutions', type=int, default=sys.maxsize, help='halt after at most n solutions')
+	parser.add_argument('-l', '--limit', type=int, default=sys.maxsize, help='upper boundary for number of symbols in a solution')
+	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
 	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
 
-	args = parser.parse_args()
-	if args.debug: logging.basicConfig(level=logging.DEBUG)
+	a = parser.parse_args()
+	if a.debug: logging.basicConfig(level=logging.DEBUG)
 	else:          logging.basicConfig(level=logging.WARNING)
 
-	return args.files, args.out_file, args.algorithm
+	if a.file.endswith('.csv'):   # special case: if file ext indicates CSV, always parse CSV
+		a.make_obs_func = make_obs_csv
+
+	return a.file, a.out_file, a.algorithm, a.make_obs_func, a.solutions, a.limit, a.full
+
 
 def main():
 	'''Program entry point.'''
 	import io
 
-	in_files, out_file, algorithm = handle_args()
-	free, context = setup(in_files)
+	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = handle_args()
+	free, context = setup(in_file, make_obs_func)
 	search = getattr(sys.modules[main.__module__], algorithm)
 
 	# Build root node
@@ -316,20 +362,39 @@ def main():
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = ReelNode([free[0]], free[1:], cost, context)
 
+	def abort_after_n(print_func):
+		'''Decorate the print_func with a countdown to raise AbortSearch after the limit is reached.'''
+
+		def wrapped(goal):
+			print_func(goal)
+			wrapped.n = wrapped.n - 1
+			if wrapped.n <= 0:
+				raise AbortSearch()
+
+		wrapped.n = solutions
+
+		return wrapped
+
+	@abort_after_n
 	def print_goal_file(goal):
+		'''Print the solution from the goal node to the open file out_fd.'''
 		solution_str = goal.final_solution(context)
 		out_fd.write(solution_str + '\n')
 
+	@abort_after_n
 	def print_goal_stdout(goal):
+		'''Print the solution from the goal node to stdout.'''
 		solution_str = goal.final_solution(context)
 		sys.stdout.write(solution_str + '\n')
 
-	if out_file:
-		out_fd = io.open(out_file, 'a')
-		search(root, context, print_goal_file)
-		out_fd.close()
-	else:
-		search(root, context, print_goal_stdout)
+	try:
+		if out_file:
+			with io.open(out_file, 'a') as out_fd:
+				search(root, context, print_goal_file, limit, full)
+		else:
+			search(root, context, print_goal_stdout, limit, full)
+	except AbortSearch:
+		pass # successfully aborted search
 
 if __name__ == "__main__":
 	main()

@@ -13,9 +13,9 @@ import pstats
 def profile_reels():
 	import cProfile
 
-	in_files, out_file, algorithm = reels.handle_args()
-	free, context = reels.setup(in_files)
+	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = reels.handle_args()
 	search = getattr(reels, algorithm)
+	free, context = reels.setup(in_file, make_obs_func)
 
 	# Build root node
 	# initialize leaf list with the root node
@@ -23,26 +23,45 @@ def profile_reels():
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = reels.ReelNode([free[0]], free[1:], cost, context)
 
+	def abort_after_n(print_func):
+		'''Decorate the print_func with a countdown to raise AbortSearch after the limit is reached.'''
+
+		def wrapped(goal):
+			print_func(goal)
+			wrapped.n = wrapped.n - 1
+			if wrapped.n <= 0:
+				raise reels.AbortSearch()
+
+		wrapped.n = solutions
+
+		return wrapped
+
+	@abort_after_n
 	def print_goal_file(goal):
+		'''Print the solution from the goal node to the open file out_fd.'''
 		solution_str = goal.final_solution(context)
 		out_fd.write(solution_str + '\n')
 
+	@abort_after_n
 	def print_goal_stdout(goal):
+		'''Print the solution from the goal node to stdout.'''
 		solution_str = goal.final_solution(context)
 		sys.stdout.write(solution_str + '\n')
 
-	def _run(search, root, context, goal_callback):
+	def _run(search, root, context, goal_callback, limit, full):
 		pro_file = 'out.profile'
 		cProfile.runctx('search(root, context, goal_callback)', globals(), locals(), pro_file)
 		p = pstats.Stats(pro_file)
 		p.strip_dirs().sort_stats('filename','line',).print_stats()
 
-	if out_file:
-		out_fd = io.open(out_file, 'a')
-		_run(search, root, context, print_goal_file)
-		out_fd.close()
-	else:
-		_run(search, root, context, print_goal_stdout)
+	try:
+		if out_file:
+			with io.open(out_file, 'a') as out_fd:
+				_run(search, root, context, print_goal_file, limit, full)
+		else:
+			search(root, context, print_goal_stdout, limit, full)
+	except reels.AbortSearch:
+		pass # successfully aborted search
 
 def median(a):
 	N = len(a)
@@ -57,7 +76,7 @@ def time_reels(print_stuff):
 
 	N_RUNS = 20
 
-	in_files, out_file, algorithm = reels.handle_args()
+	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = reels.handle_args()
 	search = getattr(reels, algorithm)
 
 	measurements = []
@@ -67,7 +86,7 @@ def time_reels(print_stuff):
 
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
-		free, context = reels.setup(in_files)
+		free, context = reels.setup(in_file, make_obs_func)
 
 		# Build root node
 		# initialize leaf list with the root node
@@ -76,7 +95,12 @@ def time_reels(print_stuff):
 		root = reels.ReelNode([free[0]], free[1:], cost, context)
 
 		t0 = time.time()
-		result = search(root, context, mute_goal)
+
+		try:
+			result = search(root, context, mute_goal)
+		except reels.AbortSearch:
+			pass # successfully aborted search
+
 		t1 = time.time()
 		measurements.append(t1-t0)
 
