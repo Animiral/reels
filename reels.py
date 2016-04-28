@@ -186,19 +186,52 @@ def make_obs(in_file):
 		if not re.match('^\w+$', line):
 			raise RuntimeError('Illegal symbol in "{0}"'.format(line))
 
-		obs.append(line)
+		obs.append(list(line))
 
 	if not obs: raise RuntimeError('No input was given!')
 	
-	obs = list(set(obs)) # remove duplicates (avoids both getting discarded as redundant later)
+	def my_uniq(sorted_list):
+		'''custom uniq function to replace python’s set(), which does not work on lists of lists'''
+		n = len(sorted_list)
+		if 0 == n: return
+		p = sorted_list[0]
+		yield p
+		i = 1
+		while i < n:
+			q = sorted_list[i]
+			if p != q:
+				yield q
+				p = q
+			i = i + 1
+
+	logging.debug('obs = %s', sorted(obs))
+	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
+	# obs = list(set(obs)) # TypeError: 'list' objects are unhashable
+	logging.debug('obs = %s', obs)	
 	obs.sort() # DEBUG: establish deterministic order of obs
 
 	return obs
 
-def make_obs_csv(in_file):
+def make_obs_csv(in_file, dialect):
 	import csv
 
-	raise NotImplemented()
+	obs = []
+
+	with open(in_file, newline='') as fd:
+		if not dialect:
+			dialect='excel'
+		# NOTE: Sniffer mistakenly detects '\r' instead of ',' as delimiter
+		# 	dialect = csv.Sniffer().sniff(fd.read(1024))
+		# 	fd.seek(0)
+		reader = csv.reader(fd, dialect, strict=True)
+
+		for row in reader:
+			logging.debug('FOUND obs %s', row)
+			obs.append(row)
+
+		# obs = list(reader)
+		logging.debug('READ CSV %s OBS %s', ascii(reader.dialect.delimiter[0]), obs)
+		return list(sorted(obs)) # DEBUG: establish deterministic order of obs
 
 def overlap(left, right):
 	'''Return the number of overlapping symbols when appending the right piece to the left piece.'''
@@ -324,6 +357,7 @@ def dfs(root, context, goal_callback, limit, full):
 def handle_args():
 	'''Parse and handle command arguments.'''
 	import argparse
+	import csv
 
 	parser = argparse.ArgumentParser(description='''
 		Reads input from FILE and writes a one-line result to out_file.
@@ -333,27 +367,35 @@ def handle_args():
 	parser.add_argument('file', metavar='FILE', type=str, nargs='?', help='input file')
 	parser.add_argument('-o', '--out_file', help='append solution to this file')
 	parser.add_argument('-a', '--algorithm', choices=['astar','dfs'], default='astar', help='search algorithm to use')
-	parser.add_argument('--csv', dest='make_obs_func', action='store_const', const=make_obs_csv, default=make_obs, help='specify default input format as CSV')
+	parser.add_argument('--csv', action='store_true', default=False, help='specify default input format as CSV')
+	parser.add_argument('-d', '--dialect', type=str, help='CSV dialect ({0})'.format(','.join(csv.list_dialects())))
 	parser.add_argument('-n', '--solutions', type=int, default=sys.maxsize, help='halt after at most n solutions')
 	parser.add_argument('-l', '--limit', type=int, default=sys.maxsize, help='upper boundary for number of symbols in a solution')
 	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
-	parser.add_argument('-d', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
+	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
 
 	a = parser.parse_args()
 	if a.debug: logging.basicConfig(level=logging.DEBUG)
-	else:          logging.basicConfig(level=logging.WARNING)
+	else:       logging.basicConfig(level=logging.WARNING)
 
 	if a.file.endswith('.csv'):   # special case: if file ext indicates CSV, always parse CSV
-		a.make_obs_func = make_obs_csv
+		a.csv = True
 
-	return a.file, a.out_file, a.algorithm, a.make_obs_func, a.solutions, a.limit, a.full
+	return a.file, a.out_file, a.algorithm, a.csv, a.dialect, a.solutions, a.limit, a.full
 
 
 def main():
 	'''Program entry point.'''
 	import io
+	import functools
 
-	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = handle_args()
+	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = handle_args()
+
+	if csv:
+		make_obs_func = functools.partial(make_obs_csv, dialect=dialect)
+	else:
+		make_obs_func = make_obs
+
 	free, context = setup(in_file, make_obs_func)
 	search = getattr(sys.modules[main.__module__], algorithm)
 
@@ -378,13 +420,21 @@ def main():
 	@abort_after_n
 	def print_goal_file(goal):
 		'''Print the solution from the goal node to the open file out_fd.'''
-		solution_str = goal.final_solution(context)
+		sol_list = goal.final_solution(context)
+		if csv:
+			solution_str = ','.join(sol_list)
+		else:
+			solution_str = ''.join(sol_list)
 		out_fd.write(solution_str + '\n')
 
 	@abort_after_n
 	def print_goal_stdout(goal):
 		'''Print the solution from the goal node to stdout.'''
-		solution_str = goal.final_solution(context)
+		sol_list = goal.final_solution(context)
+		if csv:
+			solution_str = ','.join(sol_list)
+		else:
+			solution_str = ''.join(sol_list)
 		sys.stdout.write(solution_str + '\n')
 
 	try:

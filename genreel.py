@@ -67,28 +67,44 @@ def handle_args():
 	parser.add_argument('reel_size', type=int, help='number of symbols in the generated reel')
 	parser.add_argument('obs_count', type=int, help='number of observations to generate')
 	parser.add_argument('-m', '--method', type=str, choices=['random','min_overlap','max_overlap'], default='random', help='how to generate the list of observations')
+	parser.add_argument('--csv', action='store_true', default=False, help='generate output in CSV format')
 	# NOTE: observation size is now determined by the random size of the piece
 	# parser.add_argument('obs_min', type=int, help='minimum size of an observation')
 	# parser.add_argument('obs_max', type=int, help='maximum size of an observation')
-	args = parser.parse_args()
-	return args.sym_count, args.reel_size, args.obs_count, args.method # , args.obs_min, args.obs_max
+	return parser.parse_args()
 
-def random_observations(sym_count, reel_size, obs_count, method): # , obs_min, obs_max):
+def random_observations(sym_count, reel_size, obs_count, method):
 	random.seed()
 	reel = make_reel(reel_size, sym_count)
 	obs_func = globals()['obs_' + method]
-	obs = list(obs_func(reel, obs_count)) #, obs_min, obs_max))
+	obs = list(obs_func(reel, obs_count))
 	random.shuffle(obs)      # input order should not matter, but shuffle just to be safe
 	return (reel, obs)
+
+def output(reel, obs):
+	print(reel)
+	for o in obs:
+		print(o)
+
+def output_csv(reel, obs):
+	import csv
+	import sys
+
+	writer = csv.writer(sys.stdout)
+	writer.writerow(list(reel))
+
+	for o in map(list,obs):
+		writer.writerow(o)
 
 def main():
 	'''start the bus'''
 	args = handle_args()
-	reel, obs = random_observations(*args)
+	reel, obs = random_observations(args.sym_count, args.reel_size, args.obs_count, args.method)
 
-	print(reel)
-	for o in obs:
-		print(o)
+	if args.csv:
+		output_csv(reel, obs)
+	else:
+		output(reel, obs)
 
 if __name__ == '__main__':
 	main()
