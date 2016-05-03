@@ -15,12 +15,17 @@ import reels
 def handle_args():
 	'''Parse and handle command arguments.'''
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument('files', metavar='FILE', nargs='*', help='input file(s)')
+	parser.add_argument('file', metavar='FILE', type=str, nargs='?', help='input file')
 	parser.add_argument('-o', '--out_file', required=True, help='reels output file (last line contains solution)')
 	parser.add_argument('-s', '--solution', help='reference solution string - if provided, length and loop-invariant match is checked')
+	parser.add_argument('--csv', action='store_true', default=False, help='specify default input format as CSV')
 
-	args = parser.parse_args()
-	return args.files, args.out_file, args.solution
+	a = parser.parse_args()
+
+	if 'csv' in a.file: # special case: if file ext indicates CSV, always parse CSV
+		a.csv = True
+
+	return a.file, a.out_file, a.solution, a.csv
 
 def read_solution(out_file):
 	'''Read reels.py output solution from out_file.
@@ -35,16 +40,41 @@ def read_solution(out_file):
 	else:
 		raise RuntimeError('No solution found in %s.', out_file)
 
+def read_solution_csv(out_file):
+	'''Read reels.py output solution in CSV format from out_file.
+	We assume that the last non-empty line in the output file is the solution that we want to check against.
+	'''
+	f = io.open(out_file,'r')
+	lines = f.read().splitlines()
+	for L in reversed(lines):
+		L = L.strip()
+		if len(L) > 0:
+			return L.split(',')
+	else:
+		raise RuntimeError('No solution found in %s.', out_file)
+
 def main():
-	files, out_file, reference = handle_args()
-	obs = reels.make_obs(files)
-	sol = read_solution(out_file)
+	import functools
+
+	file, out_file, reference, csv = handle_args()
+
+	if csv:
+		make_obs_func = functools.partial(reels.make_obs_csv, dialect=None)
+		read_solution_func = read_solution_csv
+		reference = reference.split(',')
+	else:
+		make_obs_func = reels.make_obs
+		read_solution_func = read_solution
+		reference = list(reference)
+
+	obs = make_obs_func(file)
+	sol = read_solution_func(out_file)
 
 	valid = True
 	alt_solution = False    # turns to True if the output solution is valid, but different from the reference solution
 
 	for O in obs:
-		if not O in (sol*2):
+		if not reels.is_subsequence((sol*2), O):
 			sys.stdout.write('Piece missing in solution: "{0}"\n'.format(O))
 			valid = False
 
@@ -56,7 +86,7 @@ def main():
 			sys.stdout.write('Solution is too long. ({0} chars; {1} chars reference)\n'.format(len_sol, len_ref))
 			valid = False
 		else:
-			if not (reference in (sol*2) and sol in (reference*2)):
+			if not (reels.is_subsequence((sol*2), reference) and reels.is_subsequence((reference*2), sol)):
 				# Solution still passes if the reference happens not to be the only or optimal solution
 				alt_solution = True
 

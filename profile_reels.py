@@ -9,11 +9,18 @@ import sys
 import reels
 import genreel
 import pstats
+import functools
 
 def profile_reels():
 	import cProfile
 
-	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = reels.handle_args()
+	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = reels.handle_args()
+
+	if csv:
+		make_obs_func = functools.partial(reels.make_obs_csv, dialect=dialect)
+	else:
+		make_obs_func = reels.make_obs
+
 	search = getattr(reels, algorithm)
 	free, context = reels.setup(in_file, make_obs_func)
 
@@ -39,29 +46,38 @@ def profile_reels():
 	@abort_after_n
 	def print_goal_file(goal):
 		'''Print the solution from the goal node to the open file out_fd.'''
-		solution_str = goal.final_solution(context)
+		sol_list = goal.final_solution(context)
+		if csv:
+			solution_str = ','.join(sol_list)
+		else:
+			solution_str = ''.join(sol_list)
 		out_fd.write(solution_str + '\n')
 
 	@abort_after_n
 	def print_goal_stdout(goal):
 		'''Print the solution from the goal node to stdout.'''
-		solution_str = goal.final_solution(context)
+		sol_list = goal.final_solution(context)
+		if csv:
+			solution_str = ','.join(sol_list)
+		else:
+			solution_str = ''.join(sol_list)
 		sys.stdout.write(solution_str + '\n')
 
 	def _run(search, root, context, goal_callback, limit, full):
 		pro_file = 'out.profile'
-		cProfile.runctx('search(root, context, goal_callback)', globals(), locals(), pro_file)
-		p = pstats.Stats(pro_file)
-		p.strip_dirs().sort_stats('filename','line',).print_stats()
+		try:
+			cProfile.runctx('search(root, context, goal_callback, limit, full)', globals(), locals(), pro_file)
+		except reels.AbortSearch:
+			pass # successfully aborted search
+		finally:
+			p = pstats.Stats(pro_file)
+			p.strip_dirs().sort_stats('filename','line',).print_stats()
 
-	try:
-		if out_file:
-			with io.open(out_file, 'a') as out_fd:
-				_run(search, root, context, print_goal_file, limit, full)
-		else:
-			search(root, context, print_goal_stdout, limit, full)
-	except reels.AbortSearch:
-		pass # successfully aborted search
+	if out_file:
+		with io.open(out_file, 'a') as out_fd:
+			_run(search, root, context, print_goal_file, limit, full)
+	else:
+		_run(search, root, context, print_goal_stdout, limit, full)
 
 def median(a):
 	N = len(a)
@@ -76,7 +92,13 @@ def time_reels(print_stuff):
 
 	N_RUNS = 20
 
-	in_file, out_file, algorithm, make_obs_func, solutions, limit, full = reels.handle_args()
+	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = reels.handle_args()
+
+	if csv:
+		make_obs_func = functools.partial(reels.make_obs_csv, dialect=dialect)
+	else:
+		make_obs_func = reels.make_obs
+
 	search = getattr(reels, algorithm)
 
 	measurements = []
@@ -97,7 +119,7 @@ def time_reels(print_stuff):
 		t0 = time.time()
 
 		try:
-			result = search(root, context, mute_goal)
+			result = search(root, context, mute_goal, limit, full)
 		except reels.AbortSearch:
 			pass # successfully aborted search
 

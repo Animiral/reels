@@ -23,6 +23,7 @@ with ideal overlap, i.e. as many symbols as possible overlap with the next piece
 
 import sys
 import logging
+import functools
 
 from heapq import heappush, heappop
 from itertools import chain
@@ -36,6 +37,31 @@ Context = namedtuple('Context', ['obs', 'overmat'])
 class AbortSearch(Exception):
 	'''Dummy exceptions used to get out of search after solution limit.'''
 	pass
+
+def trace(func):
+	'''Decorator which outputs name of called function to log'''
+	import inspect
+
+	@functools.wraps(func)
+	def wrapper(*args, **kwargs):
+		logging.info('ENTER %s', func.__name__)
+		result = func(*args, **kwargs)
+		logging.info('EXIT %s', func.__name__)
+		return result
+
+	return wrapper
+
+def is_subsequence(haystack, needle):
+	'''Return True if the list of symbols in needle also occurs in the haystack (also a list of symbols).
+	This is the most naive, but also concise implementation. It only runs in setup() on generally short lists.'''
+	for i in range(len(haystack) - len(needle) + 1):
+		for j in range(len(needle)):
+			if haystack[i+j] != needle[j]:
+				break
+		else:
+			return True
+	else:
+		return False
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
@@ -105,7 +131,7 @@ class ReelNode:
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
-		return 'ReelNode({0},{1})'.format(self.sequence, self.free)
+		return '<<{0}: {1},{2}>>'.format(self.est, self.sequence, self.free)
 
 	def __lt__(self, other):
 		'''Ordering for leaf heap.'''
@@ -166,6 +192,21 @@ class ReelNode:
 
 # ------------------------------- end of class ReelNode ------------------------------- #
 
+def my_uniq(sorted_list):
+	'''custom uniq function to replace python’s set(), which does not work on lists of lists'''
+	n = len(sorted_list)
+	if 0 == n: return
+	p = sorted_list[0]
+	yield p
+	i = 1
+	while i < n:
+		q = sorted_list[i]
+		if p != q:
+			yield q
+			p = q
+		i = i + 1
+
+@trace
 def make_obs(in_file):
 	'''Read reel observations from the files in the parameter list.
 	Return the resulting list of observations.
@@ -189,26 +230,10 @@ def make_obs(in_file):
 		obs.append(list(line))
 
 	if not obs: raise RuntimeError('No input was given!')
-	
-	def my_uniq(sorted_list):
-		'''custom uniq function to replace python’s set(), which does not work on lists of lists'''
-		n = len(sorted_list)
-		if 0 == n: return
-		p = sorted_list[0]
-		yield p
-		i = 1
-		while i < n:
-			q = sorted_list[i]
-			if p != q:
-				yield q
-				p = q
-			i = i + 1
 
-	logging.debug('obs = %s', sorted(obs))
+
 	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
 	# obs = list(set(obs)) # TypeError: 'list' objects are unhashable
-	logging.debug('obs = %s', obs)	
-	obs.sort() # DEBUG: establish deterministic order of obs
 
 	return obs
 
@@ -229,9 +254,7 @@ def make_obs_csv(in_file, dialect):
 			logging.debug('FOUND obs %s', row)
 			obs.append(row)
 
-		# obs = list(reader)
-		logging.debug('READ CSV %s OBS %s', ascii(reader.dialect.delimiter[0]), obs)
-		return list(sorted(obs)) # DEBUG: establish deterministic order of obs
+		return list(my_uniq(sorted(obs))) # DEBUG: establish deterministic order of obs
 
 def overlap(left, right):
 	'''Return the number of overlapping symbols when appending the right piece to the left piece.'''
@@ -251,36 +274,41 @@ def make_overmat(obs):
 	thus redundant. The members of the elim set are indices into obs.
 	The return value of make_overmat is (overmat, elim).
 	'''
-
 	N = len(obs)
 	elim = set() # redundant pieces
 
-	overmat = [[0] * N for i in range(0,N)] # overlap matrix
+	overmat = [[None] * N for i in range(0,N)] # overlap matrix
 
 	for i in range(0,N):
 		for j in range(0,N):
-			if (i != j) and (obs[i] in obs[j]):
+			if (i != j) and is_subsequence(obs[j], obs[i]):
 				elim.add(i) # mark redundant piece if we find any
-			overmat[i][j] = overlap(obs[i], obs[j])
+				break
+			else:
+				overmat[i][j] = overlap(obs[i], obs[j])
 
 	return overmat, elim
 
+@trace
 def setup(in_file, make_obs_func):
 	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
 
-	logging.info('SETUP from %s...', in_file)
+	# logging.info('SETUP from %s...', in_file)
 
 	obs = make_obs_func(in_file)
+	logging.debug('obs = \n%s', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), range(len(obs)))))
 	overmat, elim = make_overmat(obs)
-	free = [i for i in range(0, len(obs)) if i not in elim] # eliminate initial pieces with complete overlap to reduce search space
+	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
+	free = [i for i in range(len(obs)) if i not in elim]             # complete overlap to reduce search space
 	context = Context(obs, overmat)
 
-	# logging.debug('obs is now %s (eliminated %s).', list(map(lambda x: obs[x], free)), elim)
-	# logging.debug('overmat = %s', overmat)
+	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
+	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))
 
-	logging.info('SETUP DONE')
+	# logging.info('SETUP DONE')
 	return free, context
 
+@trace
 def astar(root, context, goal_callback, limit, full):
 	'''This is the main search algorithm.
 	It finds the optimal solution and calls goal_callback once with the goal as parameter.
@@ -294,12 +322,12 @@ def astar(root, context, goal_callback, limit, full):
 
 	If full is set to True, the search will return all qualified solutions instead of just one.
 	'''
-	logging.info('ASTAR...')
-
 	leaf = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 	cursor = heappop(leaf)
 
 	while cursor.est <= limit:
+		logging.debug('Examine %s', cursor)
+
 		if cursor.free:
 			for s in cursor.successor(context):
 				if s.est <= limit:
@@ -309,9 +337,10 @@ def astar(root, context, goal_callback, limit, full):
 			if not full: break # one solution is enough
 			limit = cursor.est
 
-		cursor = heappop(leaf)
-
-	logging.info('ASTAR DONE')
+		try:
+			cursor = heappop(leaf)
+		except IndexError:
+			return # no more goals available
 
 def dfs(root, context, goal_callback, limit, full):
 	'''An alternative greedy depth-first search algorithm.
@@ -329,14 +358,6 @@ def dfs(root, context, goal_callback, limit, full):
 	if not full:
 		op = lt
 		goal.est = goal.est + 1 # fix off-by-one for user-specified limit
-
-# next: try stack dfs impl
-	# stack = [[root]]
-
-	# while stack:
-	# 	it = stack.pop()
-	# 	for node in it:
-
 
 	def _dfs(root, goal):
 		'''recursive depth search implementation'''
