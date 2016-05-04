@@ -14,15 +14,12 @@ import functools
 def profile_reels():
 	import cProfile
 
-	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = reels.handle_args()
-
-	if csv:
-		make_obs_func = functools.partial(reels.make_obs_csv, dialect=dialect)
-	else:
-		make_obs_func = reels.make_obs
-
-	search = getattr(reels, algorithm)
-	free, context = reels.setup(in_file, make_obs_func)
+	args = reels.handle_args()
+	read_obs_func = functools.partial(reels.read_obs_csv, dialect=args.dialect) if args.csv else reels.read_obs
+	search = {'astar': reels.astar, 'dfs': reels.dfs} [args.algorithm]
+	free, context = reels.setup(args.in_file, read_obs_func)
+	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
+	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
 	# Build root node
 	# initialize leaf list with the root node
@@ -30,54 +27,25 @@ def profile_reels():
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = reels.ReelNode([free[0]], free[1:], cost, context)
 
-	def abort_after_n(print_func):
-		'''Decorate the print_func with a countdown to raise AbortSearch after the limit is reached.'''
+	def print_goal(goal):
+		'''Count the number of calls to print_goal.
+		If the search should continue, return True.
+		If the print_count limit is exhausted, return False.
+		'''
+		solution = goal.final_solution(context)
+		goal_str = format_solution(solution)
+		out_fd.write(goal_str + '\n')
+		print_goal.print_count = print_goal.print_count - 1
+		return print_goal.print_count > 0
 
-		def wrapped(goal):
-			print_func(goal)
-			wrapped.n = wrapped.n - 1
-			if wrapped.n <= 0:
-				raise reels.AbortSearch()
+	print_goal.print_count = args.solutions
 
-		wrapped.n = solutions
-
-		return wrapped
-
-	@abort_after_n
-	def print_goal_file(goal):
-		'''Print the solution from the goal node to the open file out_fd.'''
-		sol_list = goal.final_solution(context)
-		if csv:
-			solution_str = ','.join(sol_list)
-		else:
-			solution_str = ''.join(sol_list)
-		out_fd.write(solution_str + '\n')
-
-	@abort_after_n
-	def print_goal_stdout(goal):
-		'''Print the solution from the goal node to stdout.'''
-		sol_list = goal.final_solution(context)
-		if csv:
-			solution_str = ','.join(sol_list)
-		else:
-			solution_str = ''.join(sol_list)
-		sys.stdout.write(solution_str + '\n')
-
-	def _run(search, root, context, goal_callback, limit, full):
-		pro_file = 'out.profile'
-		try:
-			cProfile.runctx('search(root, context, goal_callback, limit, full)', globals(), locals(), pro_file)
-		except reels.AbortSearch:
-			pass # successfully aborted search
-		finally:
-			p = pstats.Stats(pro_file)
-			p.strip_dirs().sort_stats('filename','line',).print_stats()
-
-	if out_file:
-		with io.open(out_file, 'a') as out_fd:
-			_run(search, root, context, print_goal_file, limit, full)
-	else:
-		_run(search, root, context, print_goal_stdout, limit, full)
+	# with out_fd: # close file when finished, come what may (exceptions etc)
+	pro_file = 'out.profile'
+	cProfile.runctx('search(root, context, print_goal, args.limit, args.full)', globals(), locals(), pro_file)
+	p = pstats.Stats(pro_file)
+	p.strip_dirs().sort_stats('filename','line',).print_stats()
+	# out_fd.close()
 
 def median(a):
 	N = len(a)
@@ -91,24 +59,19 @@ def time_reels(print_stuff):
 	import time
 
 	N_RUNS = 20
-
-	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = reels.handle_args()
-
-	if csv:
-		make_obs_func = functools.partial(reels.make_obs_csv, dialect=dialect)
-	else:
-		make_obs_func = reels.make_obs
-
-	search = getattr(reels, algorithm)
-
 	measurements = []
+
+	args = reels.handle_args()
+	read_obs_func = functools.partial(reels.read_obs_csv, dialect=args.dialect) if args.csv else reels.read_obs
+	search = {'astar': reels.astar, 'dfs': reels.dfs} [args.algorithm]
+	free, context = reels.setup(args.in_file, read_obs_func)
 
 	def mute_goal(goal):
 		pass # do not print anything
 
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
-		free, context = reels.setup(in_file, make_obs_func)
+		free, context = reels.setup(args.in_file, read_obs_func)
 
 		# Build root node
 		# initialize leaf list with the root node
@@ -119,7 +82,7 @@ def time_reels(print_stuff):
 		t0 = time.time()
 
 		try:
-			result = search(root, context, mute_goal, limit, full)
+			result = search(root, context, mute_goal, args.limit, args.full)
 		except reels.AbortSearch:
 			pass # successfully aborted search
 

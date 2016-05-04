@@ -34,14 +34,8 @@ from collections import namedtuple
 # overmat is the overlap matrix of precomputed overlaps between observations.
 Context = namedtuple('Context', ['obs', 'overmat'])
 
-class AbortSearch(Exception):
-	'''Dummy exceptions used to get out of search after solution limit.'''
-	pass
-
 def trace(func):
 	'''Decorator which outputs name of called function to log'''
-	import inspect
-
 	@functools.wraps(func)
 	def wrapper(*args, **kwargs):
 		logging.info('ENTER %s', func.__name__)
@@ -86,6 +80,7 @@ class ReelNode:
 	The node does not carry its own context pointer. It implements the flyweight pattern. The caller
 	of a node’s methods must supply its context where necessary.
 	'''
+	# __slots__ = ['sequence','free','cost','est']   # python reports sys.getsizeof(ReelNode) = 72 with __slots__, 56 without __slots__
 
 	def __calc_est(self, context):
 		'''Return the estimated total solution cost f(n) = g(n) + h(n) for this node, where g is the cost so far
@@ -142,10 +137,12 @@ class ReelNode:
 
 	def __solution(self, context):
 		'''Return the partial solution string from a list of obs indices representation.'''
+		import copy
+
 		obs, overmat = context
 
 		prev_index = self.sequence[0]
-		S = obs[prev_index]
+		S = copy.deepcopy(obs[prev_index])
 
 		for next_index in self.sequence[1:]:
 			next_piece = obs[next_index]
@@ -207,9 +204,9 @@ def my_uniq(sorted_list):
 		i = i + 1
 
 @trace
-def make_obs(in_file):
-	'''Read reel observations from the files in the parameter list.
-	Return the resulting list of observations.
+def read_obs(in_file):
+	'''Read reel observations from the in_file.
+	Return the resulting list of observations, sorted and duplicates removed.
 
 	In this default implementation, every character on every line is a symbol.
 	There are no separators.
@@ -230,19 +227,23 @@ def make_obs(in_file):
 		obs.append(list(line))
 
 	if not obs: raise RuntimeError('No input was given!')
-
-
 	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
 	# obs = list(set(obs)) # TypeError: 'list' objects are unhashable
-
 	return obs
 
-def make_obs_csv(in_file, dialect):
+def read_obs_csv(in_file, dialect):
+	'''Read reel observations from the in_file using the specified CSV dialect.
+	Return the resulting list of observations, sorted and duplicates removed.
+
+	The input format is CSV, where each row specifies one observation and each
+	value in the row is a symbol name. Symbols can thus have multi-character names.
+	'''
 	import csv
 
 	obs = []
+	_open_fd = lambda: open(in_file, newline='') if in_file else sys.stdin
 
-	with open(in_file, newline='') as fd:
+	with _open_fd() as fd:
 		if not dialect:
 			dialect='excel'
 		# NOTE: Sniffer mistakenly detects '\r' instead of ',' as delimiter
@@ -251,10 +252,11 @@ def make_obs_csv(in_file, dialect):
 		reader = csv.reader(fd, dialect, strict=True)
 
 		for row in reader:
-			logging.debug('FOUND obs %s', row)
 			obs.append(row)
 
-		return list(my_uniq(sorted(obs))) # DEBUG: establish deterministic order of obs
+	if not obs: raise RuntimeError('No input was given!')
+	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
+	return obs
 
 def overlap(left, right):
 	'''Return the number of overlapping symbols when appending the right piece to the left piece.'''
@@ -268,10 +270,13 @@ def overlap(left, right):
 
 def make_overmat(obs):
 	'''Construct the overlap matrix from the list of observations.
+
 	The overlap matrix is an NxN array of arrays such that overmat[i][j] is the maximum number of symbols
 	that can be overlapped when appending obs[j] to the right of obs[i].
+
 	As a byproduct, this function notes a set of obs pieces which are substrings of some other piece and
 	thus redundant. The members of the elim set are indices into obs.
+
 	The return value of make_overmat is (overmat, elim).
 	'''
 	N = len(obs)
@@ -290,12 +295,10 @@ def make_overmat(obs):
 	return overmat, elim
 
 @trace
-def setup(in_file, make_obs_func):
+def setup(in_file, read_obs_func):
 	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
 
-	# logging.info('SETUP from %s...', in_file)
-
-	obs = make_obs_func(in_file)
+	obs = read_obs_func(in_file)
 	logging.debug('obs = \n%s', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), range(len(obs)))))
 	overmat, elim = make_overmat(obs)
 	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
@@ -305,7 +308,6 @@ def setup(in_file, make_obs_func):
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))
 
-	# logging.info('SETUP DONE')
 	return free, context
 
 @trace
@@ -322,26 +324,32 @@ def astar(root, context, goal_callback, limit, full):
 
 	If full is set to True, the search will return all qualified solutions instead of just one.
 	'''
-	leaf = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
-	cursor = heappop(leaf)
+	leaves = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
+	cursor = heappop(leaves)
+	quit = False
+	loops = 0 # examined nodes counter
 
-	while cursor.est <= limit:
+	while cursor.est <= limit and not quit:
 		logging.debug('Examine %s', cursor)
+		loops = loops + 1
 
 		if cursor.free:
 			for s in cursor.successor(context):
 				if s.est <= limit:
-					heappush(leaf, s)
+					heappush(leaves, s)
 		else:
-			goal_callback(cursor)
-			if not full: break # one solution is enough
+			quit = not goal_callback(cursor)
+			if quit or not full: break # one solution is enough
 			limit = cursor.est
 
 		try:
-			cursor = heappop(leaf)
+			cursor = heappop(leaves)
 		except IndexError:
-			return # no more goals available
+			quit = True # no more goals available
 
+	return loops
+
+@trace
 def dfs(root, context, goal_callback, limit, full):
 	'''An alternative greedy depth-first search algorithm.
 	It produces solutions very quickly at first, but doesn’t offer the guarantee of an optimal solution.
@@ -362,18 +370,25 @@ def dfs(root, context, goal_callback, limit, full):
 	def _dfs(root, goal):
 		'''recursive depth search implementation'''
 		succ = sorted(root.successor(context))
+		quit = False
+		loops = 1
 
 		for s in succ:
 			if op(s.est, goal.est):
 				if s.free:
-					goal = _dfs(s, goal)
+					goal, quit, l = _dfs(s, goal)
+					loops = loops + l
 				else:
 					goal = s
-					goal_callback(goal)
+					loops = loops + 1
+					quit = not goal_callback(goal)
 
-		return goal
+			if quit: break
 
-	_dfs(root, goal)
+		return goal, quit, loops
+
+	_, _, loops = _dfs(root, goal)
+	return loops
 
 def handle_args():
 	'''Parse and handle command arguments.'''
@@ -385,7 +400,7 @@ def handle_args():
 		If no input file is specified, reads from standard input.
 		If no output file is specified, writes to standard output.
 		''')
-	parser.add_argument('file', metavar='FILE', type=str, nargs='?', help='input file')
+	parser.add_argument('in_file', metavar='FILE', type=str, nargs='?', help='input file')
 	parser.add_argument('-o', '--out_file', help='append solution to this file')
 	parser.add_argument('-a', '--algorithm', choices=['astar','dfs'], default='astar', help='search algorithm to use')
 	parser.add_argument('--csv', action='store_true', default=False, help='specify default input format as CSV')
@@ -395,77 +410,51 @@ def handle_args():
 	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
 	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
 
-	a = parser.parse_args()
-	if a.debug: logging.basicConfig(level=logging.DEBUG)
+	args = parser.parse_args()
+	if args.debug: logging.basicConfig(level=logging.DEBUG)
 	else:       logging.basicConfig(level=logging.WARNING)
 
-	if a.file.endswith('.csv'):   # special case: if file ext indicates CSV, always parse CSV
-		a.csv = True
+	if args.in_file and args.in_file.endswith('.csv'): # special case: if file ext indicates CSV, always parse CSV
+		args.csv = True
 
-	return a.file, a.out_file, a.algorithm, a.csv, a.dialect, a.solutions, a.limit, a.full
-
+	# return a.file, a.out_file, a.algorithm, a.csv, a.dialect, a.solutions, a.limit, a.full
+	return args
 
 def main():
 	'''Program entry point.'''
 	import io
 	import functools
 
-	in_file, out_file, algorithm, csv, dialect, solutions, limit, full = handle_args()
-
-	if csv:
-		make_obs_func = functools.partial(make_obs_csv, dialect=dialect)
-	else:
-		make_obs_func = make_obs
-
-	free, context = setup(in_file, make_obs_func)
-	search = getattr(sys.modules[main.__module__], algorithm)
+	# in_file, out_file, algorithm, csv, dialect, solutions, limit, full = handle_args()
+	args = handle_args()
+	read_obs_func = functools.partial(read_obs_csv, dialect=args.dialect) if args.csv else read_obs
+	free, context = setup(args.in_file, read_obs_func)
+	search = {'astar': astar, 'dfs': dfs} [args.algorithm]
+	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
+	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
 	# Build root node
 	# choose any obs as starting point for the solution
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = ReelNode([free[0]], free[1:], cost, context)
 
-	def abort_after_n(print_func):
-		'''Decorate the print_func with a countdown to raise AbortSearch after the limit is reached.'''
+	def print_goal(goal):
+		'''Count the number of calls to print_goal.
+		If the search should continue, return True.
+		If the print_count limit is exhausted, return False.
+		'''
+		solution = goal.final_solution(context)
+		goal_str = format_solution(solution)
+		out_fd.write(goal_str + '\n')
+		print_goal.print_count = print_goal.print_count - 1
+		return print_goal.print_count > 0
 
-		def wrapped(goal):
-			print_func(goal)
-			wrapped.n = wrapped.n - 1
-			if wrapped.n <= 0:
-				raise AbortSearch()
+	print_goal.print_count = args.solutions
 
-		wrapped.n = solutions
+	with out_fd: # close file when finished, come what may (exceptions etc)
+		loops = search(root, context, print_goal, args.limit, args.full)
 
-		return wrapped
-
-	@abort_after_n
-	def print_goal_file(goal):
-		'''Print the solution from the goal node to the open file out_fd.'''
-		sol_list = goal.final_solution(context)
-		if csv:
-			solution_str = ','.join(sol_list)
-		else:
-			solution_str = ''.join(sol_list)
-		out_fd.write(solution_str + '\n')
-
-	@abort_after_n
-	def print_goal_stdout(goal):
-		'''Print the solution from the goal node to stdout.'''
-		sol_list = goal.final_solution(context)
-		if csv:
-			solution_str = ','.join(sol_list)
-		else:
-			solution_str = ''.join(sol_list)
-		sys.stdout.write(solution_str + '\n')
-
-	try:
-		if out_file:
-			with io.open(out_file, 'a') as out_fd:
-				search(root, context, print_goal_file, limit, full)
-		else:
-			search(root, context, print_goal_stdout, limit, full)
-	except AbortSearch:
-		pass # successfully aborted search
+	logging.debug('Examined %s nodes.', loops)
 
 if __name__ == "__main__":
 	main()

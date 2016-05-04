@@ -40,35 +40,22 @@ def read_solution(out_file):
 	else:
 		raise RuntimeError('No solution found in %s.', out_file)
 
-def read_solution_csv(out_file):
-	'''Read reels.py output solution in CSV format from out_file.
-	We assume that the last non-empty line in the output file is the solution that we want to check against.
-	'''
-	f = io.open(out_file,'r')
-	lines = f.read().splitlines()
-	for L in reversed(lines):
-		L = L.strip()
-		if len(L) > 0:
-			return L.split(',')
-	else:
-		raise RuntimeError('No solution found in %s.', out_file)
-
 def main():
 	import functools
 
 	file, out_file, reference, csv = handle_args()
 
 	if csv:
-		make_obs_func = functools.partial(reels.make_obs_csv, dialect=None)
-		read_solution_func = read_solution_csv
+		read_obs_func = functools.partial(reels.read_obs_csv, dialect=None)
+		conv_line = lambda line: line.split(',')
 		reference = reference.split(',')
 	else:
-		make_obs_func = reels.make_obs
-		read_solution_func = read_solution
+		read_obs_func = reels.read_obs
+		conv_line = lambda line: list(line)
 		reference = list(reference)
 
-	obs = make_obs_func(file)
-	sol = read_solution_func(out_file)
+	obs = read_obs_func(file)
+	sol = conv_line(read_solution(out_file))
 
 	valid = True
 	alt_solution = False    # turns to True if the output solution is valid, but different from the reference solution
@@ -83,7 +70,7 @@ def main():
 		len_ref = len(reference)
 
 		if len_sol > len_ref:
-			sys.stdout.write('Solution is too long. ({0} chars; {1} chars reference)\n'.format(len_sol, len_ref))
+			sys.stdout.write('Solution is too long. ({0} symbols; {1} symbols reference)\n'.format(len_sol, len_ref))
 			valid = False
 		else:
 			if not (reels.is_subsequence((sol*2), reference) and reels.is_subsequence((reference*2), sol)):
@@ -95,7 +82,7 @@ def main():
 		len_obs = len(''.join(obs))
 
 		if len_obs < len_sol:
-			sys.stdout.write('Solution is too long. ({0} chars; {1} chars observed)\n'.format(len_sol, len_obs))
+			sys.stdout.write('Solution is too long. ({0} symbols; {1} symbols observed)\n'.format(len_sol, len_obs))
 			valid = False
 
 	if valid:
