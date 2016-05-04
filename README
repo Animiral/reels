@@ -1,38 +1,86 @@
 reels.py is a tool that can reconstruct a looped string of symbols (“reel”) from a set of observed substrings.
-Input files, which contain the observed pieces, must adhere to the program’s defined input format. Pass the input files as command parameters. The program then prints one solution for each input file to standard out (as a default).
+An input file, which contains the observed pieces, must adhere to one of the program’s supported input formats. A plain format, in which one symbol is one character, as well as CSV are supported.
 The generated solutions are as short as possible. To reliably reconstruct a reel, include in the input as many and as large observations as possible, covering every symbol position in the reel at least once.
 
 
-usage: reels.py [-h] [-o OUT_FILE] [FILE [FILE ...]]
+usage: reels.py [-h] [-o OUT_FILE] [-a {astar,dfs}] [--csv] [-d DIALECT]
+                [-n SOLUTIONS] [-l LIMIT] [-f]
+                [FILE]
 
-Reads input from FILES in order and writes a one-line result for each input
-file to OUTPUT. If no input files are specified, reads from standard input. If
-no output files are specified, writes to standard output.
+Reads input from FILE and writes a one-line result to out_file. If no input
+file is specified, reads from standard input. If no output file is specified,
+writes to standard output.
 
 positional arguments:
-  FILE                  input file(s)
+  FILE                  input file
 
 optional arguments:
   -h, --help            show this help message and exit
   -o OUT_FILE, --out_file OUT_FILE
                         append solution to this file
+  -a {astar,dfs}, --algorithm {astar,dfs}
+                        search algorithm to use
+  --csv                 specify default input format as CSV
+  -d DIALECT, --dialect DIALECT
+                        CSV dialect (excel-tab,excel,unix)
+  -n SOLUTIONS, --solutions SOLUTIONS
+                        halt after at most n solutions
+  -l LIMIT, --limit LIMIT
+                        upper boundary for number of symbols in a solution
+  -f, --full            do a full search for all, not just one, shortest
+                        solution
 
 
-Input format:
-The input files consist of any number of observed substrings, each on a separate line.
+Choosing a strategy:
+By default, reels.py uses the A* algorithm. It is guaranteed to find the best (smallest) solution before any other.
+On a not-too-current desktop PC, with this default, the program will easily crunch average problems with up to 50 input pieces.
+
+If the default algorithm is too slow, this program offers an alternative approach in the dfs (depth-first search) algorithm.
+This search algorithm will piece together the reel by always using what looks like the most promising next piece at the moment.
+It it very fast at finding a solution. However, unlike with A*, this solution is not guaranteed to be the best. It is even
+unlikely to be a very good solution when working with a large input set.
+The dfs keeps searching for better solutions, which it puts out as it finds them. Because there is no way to know whether any
+found solution is the best possible one, the program exhausts the entire search space before it stops.
+In total, this takes much more time than an A* search.
+
+With the -n parameter, reels.py can be directed to stop after a certain number of solutions has been found. Thus, it is possible
+to keep the dfs algorithm to an acceptable number of solutions. The most recent one will always be the best.
+
+Use the -l parameter whenever possible to set an upper limit on the number of symbols to expect in the final reel.
+This is very useful if you have some idea about the length of the source reel.
+Both A* and dfs will not explore any paths that would go above this limit and thus save valuable memory.
+Especially in conjunction with dfs, a manually specified limit can greatly speed up the search.
+
+With -f, both search algorithms extend their search to solutions which have the exact same length as the best known solution so far.
+It is thus possible to find not just one, but every smallest reel from the observations, if there are multiple.
+This will slightly increase the run time of the search. Solutions found in full search also count towards the -l limit.
+
+
+Plain input file format:
+The input file consists of any number of observed substrings, each on a separate line.
 An observed substring contains any number of symbols.
 Each symbol is represented by a unicode word character. The set of word characters is the set that Python’s standard library regular expressions recognize, including unicode characters from input files with a unicode encoding.
 Non-word characters such as punctuation and spaces are not valid symbols.
 The program ignores empty lines.
-All valid lines from all input files make up the complete set of substrings to be used in the search.
+All valid lines from the input file make up the complete set of substrings to be used in the search.
 If the application encounters an ill-formatted input file, such as one with non-symbol characters, it aborts with an error message.
 
 
+CSV input format:
+Like the plain format, the program expects to read an arbitrary number of observations, each on its own row.
+In CSV files, the symbols are separated by the CSV dialect’s separator character (most commonly ',').
+The symbols themselves are strings of arbitrary length. In contrast, symbols can only be one character in the plain format.
+
+
 Output format:
-The program outputs the shortest solution that it could find on a single line. 
-A solution is one of the shortest possible strings of symbol characters which contain every input observation as a substring.
+The program outputs solutions that it found on a separate line each.
+A solution is a preferably short string of symbols which contain every input observation as a substring.
 The solution is considered to loop around from the last to the first character. ABCDE is thus equivalent to BCDEA.
 The loop is broken at an arbitrary point in the output.
+If an output file is not specified, the program writes to standard output.
+If the specified output file does not exist, it will be created.
+If the output file exists, the program appends output lines at the end.
+If the input format is CSV, the program automatically switches to CSV format for its solution outputs.
 
 
 Example:
@@ -44,3 +92,24 @@ BCD
 ---
 The program might output the following solution:
 AABCDAD
+
+
+Invocation examples:
+$ reels.py pieces.txt
+Uses the default A* algorithm to find the shortest reel that can be reconstructed from the pieces in pieces.txt.
+If there is more than one best solution, only one of them is output.
+
+$ reels.py -o solutions.txt -f -l 100 --csv pieces.txt
+Runs a full search for every best reel from the input pieces and writes them all to solutions.txt.
+By specifying -l 100, the program knows not to look for reels longer than 100 symbols.
+If the user knows that the reel should be exactly 100 symbols long, this can lead to great speed improvements.
+The --csv switch is mandatory if the input file is in csv format. Otherwise, reels.py will reject the file for invalid symbol characters (comma separator).
+
+$ reels.py --algorithm=dfs --solutions=1 pieces.csv
+The program accepts its arguments in different common formats, such as the long form used in this example.
+In this case, it uses the depth-first search algorithm to find exactly one solution.
+This is especially helpful if the input pieces are overwhelmingly many and the default A* algorithm fails to solve the reel in a reasonable time frame.
+If the file extension is .csv, the program will automatically switch to CSV format for its input and output even without the --csv switch.
+
+$ reels.py --dialect=excel-tab export.csv
+Runs the reels program on a CSV file exported from Excel with tab delimiters between symbols.
