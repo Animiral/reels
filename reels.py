@@ -390,7 +390,7 @@ def dfs(root, context, goal_callback, limit, full):
 	_, _, loops = _dfs(root, goal)
 	return loops
 
-def handle_args():
+def handle_args(argv=None):
 	'''Parse and handle command arguments.'''
 	import argparse
 	import csv
@@ -410,33 +410,17 @@ def handle_args():
 	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
 	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
 
-	args = parser.parse_args()
+	args = parser.parse_args(argv)
 	if args.debug: logging.basicConfig(level=logging.DEBUG)
-	else:       logging.basicConfig(level=logging.WARNING)
+	else:          logging.basicConfig(level=logging.WARNING)
 
 	if args.in_file and args.in_file.endswith('.csv'): # special case: if file ext indicates CSV, always parse CSV
 		args.csv = True
 
-	# return a.file, a.out_file, a.algorithm, a.csv, a.dialect, a.solutions, a.limit, a.full
 	return args
 
-def main():
-	'''Program entry point.'''
-	import io
-	import functools
-
-	# in_file, out_file, algorithm, csv, dialect, solutions, limit, full = handle_args()
-	args = handle_args()
-	read_obs_func = functools.partial(read_obs_csv, dialect=args.dialect) if args.csv else read_obs
-	free, context = setup(args.in_file, read_obs_func)
-	search = {'astar': astar, 'dfs': dfs} [args.algorithm]
-	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
-	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
-
-	# Build root node
-	# choose any obs as starting point for the solution
-	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	root = ReelNode([free[0]], free[1:], cost, context)
+def run(free, context, search, limit, full, solutions, out_fd, format_solution):
+	'''Runs the search algorithm with the given configuration from the arguments.'''
 
 	def print_goal(goal):
 		'''Count the number of calls to print_goal.
@@ -449,12 +433,31 @@ def main():
 		print_goal.print_count = print_goal.print_count - 1
 		return print_goal.print_count > 0
 
-	print_goal.print_count = args.solutions
+	print_goal.print_count = solutions
+
+	# Build root node
+	# choose any obs as starting point for the solution
+	cost = len(context.obs[free[0]]) - context.overmat[0][0]
+	root = ReelNode([free[0]], free[1:], cost, context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
-		loops = search(root, context, print_goal, args.limit, args.full)
+		loops = search(root, context, print_goal, limit, full)
 
 	logging.debug('Examined %s nodes.', loops)
+
+def main():
+	'''Program entry point.'''
+	import io
+	import functools
+
+	args = handle_args()
+	read_obs_func = functools.partial(read_obs_csv, dialect=args.dialect) if args.csv else read_obs
+	free, context = setup(args.in_file, read_obs_func)
+	search = {'astar': astar, 'dfs': dfs} [args.algorithm]
+	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
+	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
+
+	run(free, context, search, args.limit, args.full, args.solutions, out_fd, format_solution)
 
 if __name__ == "__main__":
 	main()
