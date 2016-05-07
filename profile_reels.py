@@ -10,6 +10,10 @@ import reels
 import genreel
 import pstats
 import functools
+import logging
+
+class AbortSearch(Exception):
+	pass
 
 def profile_reels():
 	import cProfile
@@ -38,10 +42,37 @@ def profile_reels():
 		print_goal.print_count = print_goal.print_count - 1
 		return print_goal.print_count > 0
 
+	def beat(node_count=0):
+		'''This function gets called by the search algorithm in regular intervals.
+		It ensures that the search complies with the space and time resource limits.
+		If either the processing time or memory are exhausted, immediately abort
+		the program with exit code 1.
+
+		If the search algorithm provides a count of its memorized nodes
+		(A* keeps a heap of open nodes), it is checked against the memsize.
+		'''
+		if beat.timeout and time.time() > beat.cutoff_time:
+			logging.error('Search exceeded the timeout of %s seconds.', beat.timeout)
+			raise AbortSearch()
+
+		if beat.memsize and node_count > beat.memsize:
+			logging.error('Search exceeded the memory limit of %s nodes.', beat.memsize)
+			raise AbortSearch()
+
+	if args.timeout:
+		cutoff_time = time.time() + args.timeout
+
+	beat.timeout = args.timeout
+	beat.memsize = args.memsize
+	beat.cutoff_time = cutoff_time
+
 	print_goal.print_count = args.solutions
 
 	pro_file = 'out.profile'
-	cProfile.runctx('search(root, context, print_goal, args.limit, args.full)', globals(), locals(), pro_file)
+	try:
+		cProfile.runctx('search(root, context, print_goal, args.sym_limit, args.full)', globals(), locals(), pro_file)
+	except AbortSearch:
+		pass # search killed by resource exhaustion
 	p = pstats.Stats(pro_file)
 	p.strip_dirs().sort_stats('filename','line',).print_stats()
 
@@ -67,9 +98,33 @@ def time_reels(print_stuff):
 	def mute_goal(goal):
 		pass # do not print anything
 
+	def beat(node_count=0):
+		'''This function gets called by the search algorithm in regular intervals.
+		It ensures that the search complies with the space and time resource limits.
+		If either the processing time or memory are exhausted, immediately abort
+		the program with exit code 1.
+
+		If the search algorithm provides a count of its memorized nodes
+		(A* keeps a heap of open nodes), it is checked against the memsize.
+		'''
+		if beat.timeout and time.time() > beat.cutoff_time:
+			logging.error('Search exceeded the timeout of %s seconds.', beat.timeout)
+			raise AbortSearch()
+
+		if beat.memsize and node_count > beat.memsize:
+			logging.error('Search exceeded the memory limit of %s nodes.', beat.memsize)
+			raise AbortSearch()
+
+	beat.timeout = args.timeout
+	beat.memsize = args.memsize
+
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
 		free, context = reels.setup(args.in_file, read_obs_func)
+
+		if args.timeout:
+			cutoff_time = time.time() + args.timeout
+			beat.cutoff_time = cutoff_time
 
 		# Build root node
 		# initialize leaf list with the root node
@@ -77,12 +132,13 @@ def time_reels(print_stuff):
 		cost = len(context.obs[free[0]]) - context.overmat[0][0]
 		root = reels.ReelNode([free[0]], free[1:], cost, context)
 
-		t0 = time.time()
-
-		_,_,_ = search(root, context, mute_goal, args.limit, args.full)
-
-		t1 = time.time()
-		measurements.append(t1-t0)
+		try:
+			t0 = time.time()
+			_,_,_ = search(root, context, mute_goal, args.sym_limit, args.full, beat)
+			t1 = time.time()
+			measurements.append(t1-t0)
+		except AbortSearch:
+			measurements.append(sys.maxsize) # if more than 50% of runs violate the cutoff_time, median will be maxsize
 
 	median_time = median(measurements)
 	if print_stuff: sys.stdout.write('measurements={0}, median time = '.format(measurements))

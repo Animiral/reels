@@ -311,12 +311,12 @@ def setup(in_file, read_obs_func):
 	return free, context
 
 @trace
-def astar(root, context, goal_callback, limit, full):
+def astar(root, context, goal_callback, sym_limit, full, beat_func):
 	'''This is the main search algorithm.
 	It finds the optimal solution and calls goal_callback once with the goal as parameter.
 	The goal node is also returned.
 
-	The limit parameter specifies a lower bound on the cost of a viable solution.
+	The sym_limit parameter specifies an upper bound on the cost of a viable solution.
 	Only goals below this limit are considered.
 
 	solutions is the maximum number of solutions to produce. In the case of the A* algorithm,
@@ -332,20 +332,22 @@ def astar(root, context, goal_callback, limit, full):
 	discovered = 1 # DEBUG: discovered nodes counter (1 for root)
 	memorized = 1  # DEBUG: memorized nodes counter
 
-	while cursor.est <= limit and not quit:
+	while cursor.est <= sym_limit and not quit:
+		beat_func(len(leaves)) # check in with caller
+
 		logging.debug('Examine %s', cursor)
 		examined = examined + 1
 
 		if cursor.free:
 			for s in cursor.successor(context):
 				discovered = discovered + 1
-				if s.est <= limit:
+				if s.est <= sym_limit:
 					memorized = memorized + 1
 					heappush(leaves, s)
 		else:
 			quit = not goal_callback(cursor)
 			if quit or not full: break # one solution is enough
-			limit = cursor.est
+			sym_limit = cursor.est
 
 		try:
 			cursor = heappop(leaves)
@@ -355,7 +357,7 @@ def astar(root, context, goal_callback, limit, full):
 	return examined, discovered, memorized
 
 @trace
-def dfs(root, context, goal_callback, limit, full):
+def dfs(root, context, goal_callback, sym_limit, full, beat_func):
 	'''An alternative greedy depth-first search algorithm.
 	It produces solutions very quickly at first, but doesn’t offer the guarantee of an optimal solution.
 	The program will keep running even after a solution has been found and keep producing better solutions,
@@ -364,16 +366,18 @@ def dfs(root, context, goal_callback, limit, full):
 	from operator import lt, le
 
 	# dummy goal, inferior to any actual goal found
-	goal = type('DummyNode', (object,), {'est':limit})()
-	goal.est = limit
+	goal = type('DummyNode', (object,), {'est':sym_limit})()
+	goal.est = sym_limit
 	op = le
 
 	if not full:
 		op = lt
-		goal.est = goal.est + 1 # fix off-by-one for user-specified limit
+		goal.est = goal.est + 1 # fix off-by-one for user-specified sym_limit
 
 	def _dfs(root, goal):
 		'''recursive depth search implementation'''
+		beat_func() # check in with caller
+
 		succ = sorted(root.successor(context))
 		quit = False
 		examined = 1   # DEBUG: examined nodes counter
@@ -414,8 +418,10 @@ def handle_args(argv=None):
 	parser.add_argument('--csv', action='store_true', default=False, help='specify default input format as CSV')
 	parser.add_argument('-d', '--dialect', type=str, help='CSV dialect ({0})'.format(','.join(csv.list_dialects())))
 	parser.add_argument('-n', '--solutions', type=int, default=sys.maxsize, help='halt after at most n solutions')
-	parser.add_argument('-l', '--limit', type=int, default=sys.maxsize, help='upper boundary for number of symbols in a solution')
+	parser.add_argument('-l', '--sym-limit', type=int, default=sys.maxsize, help='upper boundary for number of symbols in a solution')
 	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
+	parser.add_argument('-t', '--timeout', type=int, default=None, help='time limit in seconds for search')
+	parser.add_argument('-m', '--memsize', type=int, default=None, help='search node count limit for the process')
 	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)   # activate debug log level
 	parser.add_argument('-x', '--print-node-count', action='store_true', default=False, help=argparse.SUPPRESS)  # instead of output, print only examined-nodes,discovered-nodes
 
@@ -428,8 +434,9 @@ def handle_args(argv=None):
 
 	return args
 
-def run(free, context, search, limit, full, solutions, out_fd, format_solution, debug_print_node_count=False):
+def run(free, context, search, sym_limit, full, solutions, out_fd, format_solution, timeout, memsize, debug_print_node_count=False):
 	'''Runs the search algorithm with the given configuration from the arguments.'''
+	import time
 
 	def print_goal(goal):
 		'''Count the number of calls to print_goal.
@@ -442,6 +449,28 @@ def run(free, context, search, limit, full, solutions, out_fd, format_solution, 
 		print_goal.print_count = print_goal.print_count - 1
 		return print_goal.print_count > 0
 
+	def beat(node_count=0):
+		'''This function gets called by the search algorithm in regular intervals.
+		It ensures that the search complies with the space and time resource limits.
+		If either the processing time or memory are exhausted, immediately abort
+		the program with exit code 1.
+
+		If the search algorithm provides a count of its memorized nodes
+		(A* keeps a heap of open nodes), it is checked against the memsize.
+		'''
+		if beat.timeout and time.time() > beat.cutoff_time:
+			logging.error('Search exceeded the timeout of %s seconds.', beat.timeout)
+			sys.exit(1)
+
+		if beat.memsize and node_count > beat.memsize:
+			logging.error('Search exceeded the memory limit of %s nodes.', beat.memsize)
+			sys.exit(1)
+
+		# DEBUG: hier weiter, memsize checken
+		# Test impl of beat() in search algos
+		# Add beat_func to search call in profile_reels.py
+		# Update docstrings in search funcs, README on return codes & parameters
+
 	print_goal.print_count = solutions
 	if debug_print_node_count:
 		import io
@@ -449,13 +478,20 @@ def run(free, context, search, limit, full, solutions, out_fd, format_solution, 
 		out_fd = io.open('/dev/null','a')
 	# print_func = (lambda goal: True) if debug_print_node_count else print_goal 
 
+	if timeout:
+		cutoff_time = time.time() + timeout
+
+	beat.timeout = timeout
+	beat.memsize = memsize
+	beat.cutoff_time = cutoff_time
+
 	# Build root node
 	# choose any obs as starting point for the solution
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
 	root = ReelNode([free[0]], free[1:], cost, context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
-		examined, discovered, memorized = search(root, context, print_goal, limit, full)
+		examined, discovered, memorized = search(root, context, print_goal, sym_limit, full, beat)
 
 	if debug_print_node_count:
 		debug_print_fd.write('{0},{1},{2}\n'.format(examined, discovered, memorized))
@@ -476,7 +512,8 @@ def main():
 	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
 	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
-	run(free, context, search, args.limit, args.full, args.solutions, out_fd, format_solution, args.print_node_count)
+	run(free, context, search, args.sym_limit, args.full, args.solutions, out_fd, format_solution, args.timeout, args.memsize, args.print_node_count)
+	return 0
 
 if __name__ == "__main__":
 	main()
