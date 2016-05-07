@@ -327,15 +327,20 @@ def astar(root, context, goal_callback, limit, full):
 	leaves = [root] # heap of open ReelNodes which are leaves in the search graph -> paths left to explore
 	cursor = heappop(leaves)
 	quit = False
-	loops = 0 # examined nodes counter
+
+	examined = 0   # DEBUG: examined nodes counter
+	discovered = 1 # DEBUG: discovered nodes counter (1 for root)
+	memorized = 1  # DEBUG: memorized nodes counter
 
 	while cursor.est <= limit and not quit:
 		logging.debug('Examine %s', cursor)
-		loops = loops + 1
+		examined = examined + 1
 
 		if cursor.free:
 			for s in cursor.successor(context):
+				discovered = discovered + 1
 				if s.est <= limit:
+					memorized = memorized + 1
 					heappush(leaves, s)
 		else:
 			quit = not goal_callback(cursor)
@@ -347,7 +352,7 @@ def astar(root, context, goal_callback, limit, full):
 		except IndexError:
 			quit = True # no more goals available
 
-	return loops
+	return examined, discovered, memorized
 
 @trace
 def dfs(root, context, goal_callback, limit, full):
@@ -371,24 +376,27 @@ def dfs(root, context, goal_callback, limit, full):
 		'''recursive depth search implementation'''
 		succ = sorted(root.successor(context))
 		quit = False
-		loops = 1
+		examined = 1   # DEBUG: examined nodes counter
+		discovered = 0 # DEBUG: discovered nodes counter
 
 		for s in succ:
+			discovered = discovered + 1
 			if op(s.est, goal.est):
 				if s.free:
-					goal, quit, l = _dfs(s, goal)
-					loops = loops + l
+					goal, quit, ex, disc = _dfs(s, goal)
+					examined = examined + ex
+					discovered = discovered + disc
 				else:
 					goal = s
-					loops = loops + 1
+					examined = examined + 1
 					quit = not goal_callback(goal)
 
 			if quit: break
 
-		return goal, quit, loops
+		return goal, quit, examined, discovered
 
-	_, _, loops = _dfs(root, goal)
-	return loops
+	_, _, examined, discovered = _dfs(root, goal)
+	return examined, discovered, examined
 
 def handle_args(argv=None):
 	'''Parse and handle command arguments.'''
@@ -408,7 +416,8 @@ def handle_args(argv=None):
 	parser.add_argument('-n', '--solutions', type=int, default=sys.maxsize, help='halt after at most n solutions')
 	parser.add_argument('-l', '--limit', type=int, default=sys.maxsize, help='upper boundary for number of symbols in a solution')
 	parser.add_argument('-f', '--full', action='store_true', default=False, help='do a full search for all, not just one, shortest solution')
-	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)
+	parser.add_argument('-e', '--debug', action='store_true', default=False, help=argparse.SUPPRESS)   # activate debug log level
+	parser.add_argument('-x', '--print-node-count', action='store_true', default=False, help=argparse.SUPPRESS)  # instead of output, print only examined-nodes,discovered-nodes
 
 	args = parser.parse_args(argv)
 	if args.debug: logging.basicConfig(level=logging.DEBUG)
@@ -419,7 +428,7 @@ def handle_args(argv=None):
 
 	return args
 
-def run(free, context, search, limit, full, solutions, out_fd, format_solution):
+def run(free, context, search, limit, full, solutions, out_fd, format_solution, debug_print_node_count=False):
 	'''Runs the search algorithm with the given configuration from the arguments.'''
 
 	def print_goal(goal):
@@ -434,6 +443,11 @@ def run(free, context, search, limit, full, solutions, out_fd, format_solution):
 		return print_goal.print_count > 0
 
 	print_goal.print_count = solutions
+	if debug_print_node_count:
+		import io
+		debug_print_fd = out_fd
+		out_fd = io.open('/dev/null','a')
+	# print_func = (lambda goal: True) if debug_print_node_count else print_goal 
 
 	# Build root node
 	# choose any obs as starting point for the solution
@@ -441,9 +455,14 @@ def run(free, context, search, limit, full, solutions, out_fd, format_solution):
 	root = ReelNode([free[0]], free[1:], cost, context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
-		loops = search(root, context, print_goal, limit, full)
+		examined, discovered, memorized = search(root, context, print_goal, limit, full)
 
-	logging.debug('Examined %s nodes.', loops)
+	if debug_print_node_count:
+		debug_print_fd.write('{0},{1},{2}\n'.format(examined, discovered, memorized))
+
+	logging.debug('Examined %s nodes.', examined)
+	logging.debug('Discovered %s nodes.', discovered)
+	logging.debug('Memorized %s nodes.', memorized)
 
 def main():
 	'''Program entry point.'''
@@ -457,7 +476,7 @@ def main():
 	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
 	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
-	run(free, context, search, args.limit, args.full, args.solutions, out_fd, format_solution)
+	run(free, context, search, args.limit, args.full, args.solutions, out_fd, format_solution, args.print_node_count)
 
 if __name__ == "__main__":
 	main()

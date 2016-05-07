@@ -40,12 +40,10 @@ def profile_reels():
 
 	print_goal.print_count = args.solutions
 
-	# with out_fd: # close file when finished, come what may (exceptions etc)
 	pro_file = 'out.profile'
 	cProfile.runctx('search(root, context, print_goal, args.limit, args.full)', globals(), locals(), pro_file)
 	p = pstats.Stats(pro_file)
 	p.strip_dirs().sort_stats('filename','line',).print_stats()
-	# out_fd.close()
 
 def median(a):
 	N = len(a)
@@ -81,10 +79,7 @@ def time_reels(print_stuff):
 
 		t0 = time.time()
 
-		try:
-			result = search(root, context, mute_goal, args.limit, args.full)
-		except reels.AbortSearch:
-			pass # successfully aborted search
+		_,_,_ = search(root, context, mute_goal, args.limit, args.full)
 
 		t1 = time.time()
 		measurements.append(t1-t0)
