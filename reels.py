@@ -479,11 +479,10 @@ def run(free, context, search, sym_limit, full, solutions, out_fd, format_soluti
 	# print_func = (lambda goal: True) if debug_print_node_count else print_goal 
 
 	if timeout:
-		cutoff_time = time.time() + timeout
+		beat.cutoff_time = time.time() + timeout
 
 	beat.timeout = timeout
 	beat.memsize = memsize
-	beat.cutoff_time = cutoff_time
 
 	# Build root node
 	# choose any obs as starting point for the solution

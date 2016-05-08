@@ -138,6 +138,7 @@ def time_reels(print_stuff):
 			t1 = time.time()
 			measurements.append(t1-t0)
 		except AbortSearch:
+			examined, discovered, memorized = None, None, None
 			measurements.append(sys.maxsize) # if more than 50% of runs violate the limits, median will be maxsize
 
 	median_time = median(measurements)

@@ -19,9 +19,9 @@ for i in $(seq 3)
 do
 	for k in 10 20 30 40 45 50 55 60
 	do
-		./genreel.py --method=random 12 $((3*k)) $k      | tee >(head -n 1 > in/s_r$k_$i.txt) | tail -n $k > in/r$k_$i.in
-		./genreel.py --method=min_overlap 12 $((3*k)) $k | tee >(head -n 1 > in/s_p$k_$i.txt) | tail -n $k > in/p$k_$i.in
-		./genreel.py --method=max_overlap 12 $((3*k)) $k | tee >(head -n 1 > in/s_q$k_$i.txt) | tail -n $k > in/q$k_$i.in
+		./genreel.py --method=random 12 $((3*k)) $k      | tee >(head -n 1 > in/s_r${k}_$i.txt) | tail -n $k > in/r${k}_$i.in
+		./genreel.py --method=min_overlap 12 $((3*k)) $k | tee >(head -n 1 > in/s_p${k}_$i.txt) | tail -n $k > in/p${k}_$i.in
+		./genreel.py --method=max_overlap 12 $((3*k)) $k | tee >(head -n 1 > in/s_q${k}_$i.txt) | tail -n $k > in/q${k}_$i.in
 	done
 done
 
