@@ -92,6 +92,18 @@ class ReelNode:
 		towards the cost so far because even with some free pieces left over, the final reel might already be complete.
 
 		h(n) is the estimated number of symbols that the free pieces are going to contribute towards the final reel.
+
+		Neat heuristic:
+		A mapping (l,r) of left-pieces to right-pieces is a complete list that associates with each free piece in the node
+		plus the Z piece (end of the partial solution) another free piece or A (start of the partial solution). Each
+		left-piece and each right-piece must appear exactly once in the mapping, because it is impossible to append to
+		the same piece more than once. (Z,A) is not a valid association (because it would skip the remaining free pieces).
+		To compute the optimistic heuristic h(n), we attempt to find among the possible mappings the one that provides
+		the best possible overlap between all left-pieces and right-pieces.
+		The search for this best mapping starts with the pref list, giving each piece the ideal counterpart. From there,
+		conflicting assignments are advanced down the pref list until a valid mapping emerges.
+
+		Basic heuristic:
 		As an optimistic guess, we assume that every free piece will be placed such that it achieves optimal overlap
 		with another piece to the left. The other piece could be any of the other free pieces or the tail of the sequence.
 
@@ -107,15 +119,46 @@ class ReelNode:
 		A = self.sequence[0]
 		Z = self.sequence[-1]
 
+		range_obs = list(range(len(obs)))
+		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
+		assoc = [0 if x in free or x == Z else None for x in range_obs] # root assoc for heuristic search
+		# logging.warn('assoc for obs=%s, pref=%s = %s', obs, pref, assoc)
+
+		# update assoc to point to valid pieces
+		for i in range_obs:
+			a = assoc[i]
+			if a == None: continue
+
+			while ((i == Z) != (pref[i][a] != A)) and pref[i][a] not in free:
+				a += 1
+			assoc[i] = a
+
+		# get total overlap from the ideal assoc configuration that we have
+		over = 0
+		for i in chain(free,[Z]):
+			a = assoc[i]      # how many steps down in the preference this piece had to go
+			p = pref[i][a]    # piece which is attached to i according to our configuration
+			o = overmat[i][p] # overlapping symbols count
+			over += o
+
+		# over = sum(map(lambda f: overmat[f][pref[f][assoc[f]]], chain(free,[Z])))
+
 		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
-
-		for f in free:
-			free_Z = chain(free, [Z])
-			max_overlap = max(map(lambda a: overmat[a][f], free_Z))
-			H += len(obs[f]) - max_overlap
-
+		H += sum(map(lambda f: len(obs[f]), free))   # total length of leftover pieces without overlap
+		H -= over
 		H = max(0,H)
+
+		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
+		# H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		# H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
+
+		# for f in free:
+		# 	free_Z = chain(free, [Z])
+		# 	max_overlap = max(map(lambda a: overmat[a][f], free_Z))
+		# 	H += len(obs[f]) - max_overlap
+
+		# H = max(0,H)
+		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		return G + H
 
@@ -307,7 +350,7 @@ def make_pref(obs, overmat, free):
 	'''
 	def single_pref(i):
 		other_free = filter(lambda a: a != i, free)
-		best_overlap_first = sorted(other_free, key=lambda f: overmat[f][i])
+		best_overlap_first = sorted(other_free, key=lambda f: -overmat[i][f])
 		return list(best_overlap_first) 
 
 	return [ single_pref(i) for i in range(len(obs)) ]	
