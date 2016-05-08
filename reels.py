@@ -32,7 +32,8 @@ from collections import namedtuple
 # Context holds information about the search environment.
 # obs is the list of observation strings taken from the source reel.
 # overmat is the overlap matrix of precomputed overlaps between observations.
-Context = namedtuple('Context', ['obs', 'overmat'])
+# pref is the list of preferred overlaps for every free piece.
+Context = namedtuple('Context', ['obs', 'overmat', 'pref'])
 
 def trace(func):
 	'''Decorator which outputs name of called function to log'''
@@ -96,7 +97,7 @@ class ReelNode:
 
 		Additionally, we discount a number of symbols according to the best possible overlap to the head of the sequence.
 		'''
-		obs, overmat = context
+		obs, overmat, pref = context
 
 		G = self.cost
 
@@ -139,7 +140,7 @@ class ReelNode:
 		'''Return the partial solution string from a list of obs indices representation.'''
 		import copy
 
-		obs, overmat = context
+		obs, overmat, pref = context
 
 		prev_index = self.sequence[0]
 		S = copy.deepcopy(obs[prev_index])
@@ -167,7 +168,7 @@ class ReelNode:
 
 	def successor(self, context):
 		'''Generate all successors to this node.'''
-		obs, overmat = context
+		obs, overmat, pref = context
 		sequence = self.sequence
 		free = self.free
 		cost = self.cost
@@ -189,7 +190,7 @@ class ReelNode:
 
 # ------------------------------- end of class ReelNode ------------------------------- #
 
-def my_uniq(sorted_list):
+def uniq(sorted_list):
 	'''custom uniq function to replace python’s set(), which does not work on lists of lists'''
 	n = len(sorted_list)
 	if 0 == n: return
@@ -227,7 +228,7 @@ def read_obs(in_file):
 		obs.append(list(line))
 
 	if not obs: raise RuntimeError('No input was given!')
-	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
+	obs = list(uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
 	# obs = list(set(obs)) # TypeError: 'list' objects are unhashable
 	return obs
 
@@ -255,7 +256,7 @@ def read_obs_csv(in_file, dialect):
 			obs.append(row)
 
 	if not obs: raise RuntimeError('No input was given!')
-	obs = list(my_uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
+	obs = list(uniq(sorted(obs))) # remove duplicates (avoids both getting discarded as redundant later)
 	return obs
 
 def overlap(left, right):
@@ -294,6 +295,23 @@ def make_overmat(obs):
 
 	return overmat, elim
 
+def make_pref(obs, overmat, free):
+	'''Construct the pref list from the list of observations and their overlaps.
+	The pref list is a list which, for every free obs piece, gives the list of
+	other pieces that this piece would prefer overlapping with.
+
+	pref[i][0] is thus the obs index for the piece i such that
+	overmat[i][pref[i][0]] >= overmat[i][pref[i][x]], x > 0.
+
+	The order of the returned list is the same as the obs list from the obs parameter.
+	'''
+	def single_pref(i):
+		other_free = filter(lambda a: a != i, free)
+		best_overlap_first = sorted(other_free, key=lambda f: overmat[f][i])
+		return list(best_overlap_first) 
+
+	return [ single_pref(i) for i in range(len(obs)) ]	
+
 @trace
 def setup(in_file, read_obs_func):
 	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
@@ -303,7 +321,8 @@ def setup(in_file, read_obs_func):
 	overmat, elim = make_overmat(obs)
 	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
 	free = [i for i in range(len(obs)) if i not in elim]             # complete overlap to reduce search space
-	context = Context(obs, overmat)
+	pref = make_pref(obs, overmat, free)
+	context = Context(obs, overmat, pref)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))

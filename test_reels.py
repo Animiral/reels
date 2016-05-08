@@ -6,13 +6,14 @@
 import logging
 import sys
 
-from reels import Context, ReelNode, overlap
+from reels import Context, ReelNode, overlap, make_overmat, make_pref
 Node = ReelNode
 
 def test():
 	logging.info('TEST...')
 
 	test_overlap()
+	test_pref()
 	test_solution()
 	test_est()
 	test_successor()
@@ -20,7 +21,7 @@ def test():
 	logging.info('TEST DONE')
 
 def test_overlap():
-	sys.stderr.write('Test overlap(left,right):')
+	sys.stderr.write('Test overlap(left,right):\n')
 
 	cases = [
 		('abc','defg',0),
@@ -42,8 +43,9 @@ def test_solution():
 	sys.stderr.write('Test node.__solution():\n')
 
 	obs = ['abc','cde','cab']
-	overmat = [[0, 1, 1], [0, 0, 0], [2, 0, 0]]
-	context = Context(obs, overmat)
+	overmat, _ = make_overmat(obs)
+	pref = make_pref(obs, overmat, [0,1,2])
+	context = Context(obs, overmat, pref)
 	cases = [
 		(Node([0,1],[2],0,context),'abcde'),
 		(Node([1,0],[2],0,context),'cdeabc'),
@@ -59,12 +61,34 @@ def test_solution():
 		else:                  
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
+def test_pref():
+	sys.stderr.write('Test make_pref():\n')
+
+	cases = [
+		(['abcde','eab','dea'], [[2,1],[0,2],[1,0]])
+	]
+
+	for c in cases:
+		obs, expected = c
+		overmat, _ = make_overmat(obs)
+		# overmat = [[0, 1, 2], [2, 0, 0], [1, 2, 0]]
+		free = list(range(len(obs))) # there are no redundant pieces in cases
+
+		sys.stderr.write('\tmake_pref({0},<mat>,<free>) == {1}: '.format(obs, expected))
+		actual = make_pref(obs, overmat, free)
+
+		if actual == expected: 
+			sys.stderr.write('OK\n')
+		else:                  
+			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
+
 def test_est():
 	sys.stderr.write('Test est(node):\n')
 
 	obs = ['abc','cdef']
-	overmat = [[0,1],[0,0]]
-	context = Context(obs, overmat)
+	overmat, _ = make_overmat(obs)
+	pref = make_pref(obs, overmat, [0,1])
+	context = Context(obs, overmat, pref)
 	cases = [
 		(Node([0],[1],3,context),3+3),
 		(Node([1],[0],4,context),4+2),
@@ -81,8 +105,9 @@ def test_est():
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
 	obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	overmat = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
-	context = Context(obs, overmat)
+	overmat, _ = make_overmat(obs)
+	pref = make_pref(obs, overmat, [0,1,2,3,4])
+	context = Context(obs, overmat, pref)
 	cases = [
 		(Node([2],[0,1,3,4],11,context),11+4),
 		(Node([0,2],[1,4],13,context),13+2),
@@ -102,8 +127,9 @@ def test_successor():
 	sys.stderr.write('Test successor(node):\n')
 
 	obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	overmat = [[0, 0, 1, 2, 0], [2, 0, 0, 1, 0], [0, 0, 0, 0, 2], [0, 0, 2, 0, 1], [1, 2, 0, 0, 0]]
-	context = Context(obs, overmat)
+	overmat, _ = make_overmat(obs)
+	pref = make_pref(obs, overmat, [0,1,2,3,4])
+	context = Context(obs, overmat, pref)
 
 	n0 = Node([2],[0,1,3,4],11,context)
 
