@@ -134,15 +134,25 @@ def time_reels(print_stuff):
 
 		try:
 			t0 = time.time()
-			_,_,_ = search(root, context, mute_goal, args.sym_limit, args.full, beat)
+			examined, discovered, memorized = search(root, context, mute_goal, args.sym_limit, args.full, beat)
 			t1 = time.time()
 			measurements.append(t1-t0)
 		except AbortSearch:
-			measurements.append(sys.maxsize) # if more than 50% of runs violate the cutoff_time, median will be maxsize
+			measurements.append(sys.maxsize) # if more than 50% of runs violate the limits, median will be maxsize
 
 	median_time = median(measurements)
 	if print_stuff: sys.stdout.write('measurements={0}, median time = '.format(measurements))
-	sys.stdout.write('{0:.3f}\n'.format(median_time))
+	sys.stdout.write('{0:.3f}'.format(median_time))
+
+	if args.print_node_count:
+		sys.stdout.write(',{0},{1},{2}'.format(examined, discovered, memorized))
+
+	sys.stdout.write('\n')
+
+	# The 3 node measurements are the same in every run (we only print the last one)
+	logging.debug('Examined %s nodes.', examined)
+	logging.debug('Discovered %s nodes.', discovered)
+	logging.debug('Memorized %s nodes.', memorized)
 
 def main():
 	import sys

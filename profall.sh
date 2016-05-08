@@ -6,6 +6,7 @@
 #   - time,examined,discovered,memorized
 
 OUT_FILE=profall.csv
+LIMITS="--timeout=60 --memsize=1000000"
 
 touch $OUT_FILE
 # truncate -s 0 $OUT_FILE
@@ -21,9 +22,7 @@ do
 		echo -n "$f $arg..."
 
 		echo -n "$f,$arg," >> $OUT_FILE
-		./profile_reels.py ts $arg "$f" | tr -d '\n' >> $OUT_FILE
-		echo -n ',' >> $OUT_FILE
-		./reels.py -x $arg "$f" >> $OUT_FILE
+		./profile_reels.py ts -x $LIMITS $arg "$f" >> $OUT_FILE
 
 		echo "DONE"
 	done

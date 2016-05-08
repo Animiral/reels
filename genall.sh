@@ -26,11 +26,8 @@ do
 done
 
 # CSV test inputs
-./genreel.py --csv --method=random 12 15 5  | tee >(head -n 1 > in/s_csv5.txt)    | tail -n 5   > in/csv5.csv
 ./genreel.py --csv --method=random 12 30 10 | tee >(head -n 1 > in/s_csv10.txt)   | tail -n 10  > in/csv10.csv
-./genreel.py --csv --method=random 12 45 15 | tee >(head -n 1 > in/s_csv15.txt)   | tail -n 15  > in/csv15.csv
 ./genreel.py --csv --method=random 12 60 20 | tee >(head -n 1 > in/s_csv20.txt)   | tail -n 20  > in/csv20.csv
-./genreel.py --csv --method=random 12 75 25 | tee >(head -n 1 > in/s_csv25.txt)   | tail -n 25  > in/csv25.csv
 ./genreel.py --csv --method=random 12 90 30 | tee >(head -n 1 > in/s_csv30.txt)   | tail -n 30  > in/csv30.csv
 ./genreel.py --csv --method=random 12 120 40 | tee >(head -n 1 > in/s_csv40.txt)   | tail -n 40  > in/csv40.csv
 ./genreel.py --csv --method=random 12 150 50 | tee >(head -n 1 > in/s_csv50.txt)   | tail -n 50  > in/csv50.csv
