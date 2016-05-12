@@ -131,8 +131,8 @@ class EstNode:
 		rhs_lhs = [(pref[p][self.assoc[p]], p) for p in context.lefts]
 		rhs_lhs.sort() # groupby requires sorted input
 
-		for rhs, lhs_iter in itertools.groupby(rhs_lhs, key=itemgetter(0)):
-			lhs = list(lhs_iter)
+		for rhs, pair_iter in itertools.groupby(rhs_lhs, key=itemgetter(0)):
+			lhs = list(map(itemgetter(1), pair_iter))
 			if len(lhs) > 1: # more than one lhs associated with the rhs is a conflict
 				yield lhs
 
@@ -155,6 +155,7 @@ class EstNode:
 
 	def successor(self, context):
 		'''Generate all successors to this EstNode in the estimate search tree.'''
+		overmat, pref, _, _, _ = context
 		resolutions = map(self.__resolutions, self.conflicts) # for each conflict, we now have a list of possible resolutions for that conflict.
 
 		# Every successor node emerges from a plan.
@@ -171,8 +172,11 @@ class EstNode:
 				valid = valid and raise_assoc(succ_assoc, advance, context)
 
 				# increase succ cost by # of overlap lost
-				self_overlap = overmat[advance][self.assoc[advance]] 
-				succ_overlap = overmat[advance][succ_assoc[advance]] 
+				pref_row = pref[advance]
+				self_pref = pref_row[self.assoc[advance]]
+				succ_pref = pref_row[succ_assoc[advance]]
+				self_overlap = overmat[advance][self_pref] 
+				succ_overlap = overmat[advance][succ_pref] 
 				loss = self_overlap - succ_overlap
 				assert loss >= 0
 				succ_cost += loss
@@ -309,17 +313,20 @@ class ReelNode:
 		leaves = [root] # bfs node heap
 		clean_config = None # bfs goal
 
-		# DEBUG: no search; the root is the goal.
-		over = calc_over(lefts, overmat, pref, root.assoc) # while leaves:
-		# 	node = heappop(leaves)
+		while leaves:
+			node = heappop(leaves)
 
-		# 	if not node.expand(context): # this is goal
-		# 		clean_config = node.assoc
-		# 		over = calc_over(lefts, overmat, pref, node.assoc)
-		# 		break
+			if not node.expand(context): # this is goal
+				clean_config = node.assoc
+				over = calc_over(lefts, overmat, pref, node.assoc)
+				break
 
-		# 	for succ in node.successor(context):
-		# 		heappush(leaves, succ)
+			for succ in node.successor(context):
+				heappush(leaves, succ)
+
+			# DEBUG: just one iteration	
+			over = calc_over(lefts, overmat, pref, node.assoc)
+			break
 
 		### over = sum(map(lambda f: overmat[f][pref[f][assoc[f]]], itertools.chain(free,[Z])))
 
