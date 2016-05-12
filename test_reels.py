@@ -6,10 +6,13 @@
 import logging
 import sys
 
-from reels import Context, ReelNode, overlap, make_overmat, make_pref
+from reels import ReelContext, ReelNode, overlap, make_overmat, make_pref
 Node = ReelNode
 
 def test():
+	if sys.argv[-1] == '--debug': logging.basicConfig(level=logging.DEBUG)
+	else:                         logging.basicConfig(level=logging.WARNING)
+
 	logging.info('TEST...')
 
 	test_overlap()
@@ -45,7 +48,7 @@ def test_solution():
 	obs = ['abc','cde','cab']
 	overmat, _ = make_overmat(obs)
 	pref = make_pref(obs, overmat, [0,1,2])
-	context = Context(obs, overmat, pref)
+	context = ReelContext(obs, overmat, pref)
 	cases = [
 		(Node([0,1],[2],0,context),'abcde'),
 		(Node([1,0],[2],0,context),'cdeabc'),
@@ -86,42 +89,32 @@ def test_pref():
 def test_est():
 	sys.stderr.write('Test est(node):\n')
 
-	obs = ['abc','cdef']
-	overmat, _ = make_overmat(obs)
-	pref = make_pref(obs, overmat, [0,1])
-	context = Context(obs, overmat, pref)
+	obs1 = ['abc','cdef']
+	obs2 = ['318', '931', '8079553b00a', '180', '0ab93']
+	obs3 = ['babb','bcb','bba']   # babbcb vs. babbabcb
+
 	cases = [
-		(Node([0],[1],3,context),3+3),
-		(Node([1],[0],4,context),4+2),
-		(Node([0,1],[],6,context),6)
+		(obs1,[0],[1],3,        3+3),
+		(obs1,[1],[0],4,        4+2),
+		(obs1,[0,1],[],6,       6),
+		(obs2,[2],[0,1,3,4],11, 11+4),
+		(obs2,[0,2],[1,4],13,   13+2),
+		(obs2,[1,0,2],[4],14,   14+1),
+		(obs3,[0],[1,2],3,      6)
 	]
 
 	for c in cases:
-		node, expected = c
+		obs, seq, free, cost, expected = c
+		overmat, _ = make_overmat(obs)
+		pref = make_pref(obs, overmat, list(range(len(obs))))
+		context = ReelContext(obs, overmat, pref)
+		node = Node(seq,free,cost,context)
+
 		sys.stderr.write('\t{0}.__calc_est() == {1}: '.format(node,expected))
 		actual = node._ReelNode__calc_est(context)
 		if actual == expected:
 			sys.stderr.write('OK\n')
 		else:                  
-			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
-
-	obs = ['318', '931', '8079553b00a', '180', '0ab93']
-	overmat, _ = make_overmat(obs)
-	pref = make_pref(obs, overmat, [0,1,2,3,4])
-	context = Context(obs, overmat, pref)
-	cases = [
-		(Node([2],[0,1,3,4],11,context),11+4),
-		(Node([0,2],[1,4],13,context),13+2),
-		(Node([1,0,2],[4],14,context),14+1)
-	]
-
-	for c in cases:
-		node, expected = c
-		sys.stderr.write('\t{0}.__calc_est() == {1}: '.format(node,expected))
-		actual = node._ReelNode__calc_est(context)
-		if actual == expected:
-			sys.stderr.write('OK\n')
-		else:
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
 def test_successor():
@@ -130,7 +123,7 @@ def test_successor():
 	obs = ['318', '931', '8079553b00a', '180', '0ab93']
 	overmat, _ = make_overmat(obs)
 	pref = make_pref(obs, overmat, [0,1,2,3,4])
-	context = Context(obs, overmat, pref)
+	context = ReelContext(obs, overmat, pref)
 
 	n0 = Node([2],[0,1,3,4],11,context)
 

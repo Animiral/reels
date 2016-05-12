@@ -10,6 +10,7 @@ do
 	r=$(echo $f | sed 's#/\(.*\)\.in#/s_\1.txt#')
 	ref=$(cat $r)
 
+	if [ ! -f "$out" ]; then sleep 1; fi
 	echo $(basename $f) : $(./validate.py --out_file="$out" --solution="$ref" "$f")
 done
 
@@ -21,5 +22,6 @@ do
 	r=$(echo $f | sed 's#/\(.*\)\.csv#/s_\1.txt#')
 	ref=$(cat $r)
 
+	if [ ! -f "$out" ]; then sleep 1; fi
 	echo $(basename $f) : $(./validate.py --out_file="$out" --solution="$ref" "$f")
 done
