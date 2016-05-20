@@ -11,7 +11,8 @@ do
 	ref=$(cat $r)
 
 	if [ ! -f "$out" ]; then sleep 1; fi
-	echo $(basename $f) : $(./validate.py --out_file="$out" --solution="$ref" "$f")
+	echo -n "$(basename $f) : "
+	./validate.py --out_file="$out" --solution="$ref" "$f"
 done
 
 # CSV test suite
@@ -23,5 +24,6 @@ do
 	ref=$(cat $r)
 
 	if [ ! -f "$out" ]; then sleep 1; fi
-	echo $(basename $f) : $(./validate.py --out_file="$out" --solution="$ref" "$f")
+	echo -n "$(basename $f) : "
+	./validate.py --out_file="$out" --solution="$ref" "$f"
 done
