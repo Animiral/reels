@@ -35,7 +35,8 @@ from operator import itemgetter
 # obs is the list of observation strings taken from the source reel.
 # overmat is the overlap matrix of precomputed overlaps between observations.
 # pref is the list of preferred overlaps for every free piece.
-ReelContext = namedtuple('ReelContext', ['obs', 'overmat', 'pref'])
+# ReelContext = namedtuple('ReelContext', ['obs', 'overmat', 'pref'])
+ReelContext = namedtuple('ReelContext', ['obs', 'free', 'overmat', 'pref'])
 EstContext = namedtuple('EstContext', ['overmat', 'pref', 'lefts', 'A', 'Z'])
 
 def trace(func):
@@ -237,116 +238,84 @@ class ReelNode:
 		'''
 		import functools
 
-		obs, overmat, pref = context
+		# obs, overmat, pref = context
+		obs, _, overmat, pref = context
+		# sequence, free = self.sequence, self.free
+		sequence, free = self.__sequence_free(context)
 
 		G = self.cost
 
-		free = self.free
 		if not free: return G   # this is goal node
 
-		A = self.sequence[0]
-		Z = self.sequence[-1]
+		A = sequence[0]
+		Z = sequence[-1]
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 
 
-		enum_obs = list(range(len(obs)))
-		lefts = free + [Z] # left-hand pieces of association heuristic
-		assoc = [0 if x in free or x == Z else None for x in enum_obs] # root assoc for heuristic search
+		# enum_obs = list(range(len(obs)))
+		# lefts = free + [Z] # left-hand pieces of association heuristic
+		# assoc = [0 if x in free or x == Z else None for x in enum_obs] # root assoc for heuristic search
 
-		self.est = 0 # DEBUG: set temp value
-		logging.debug('est %s', self)
-		logging.debug('assoc for obs=%s, pref=%s = %s', obs, pref, assoc)
+		# self.est = 0 # DEBUG: set temp value
+		# logging.debug('est %s', self)
+		# logging.debug('assoc for obs=%s, pref=%s = %s', obs, pref, assoc)
 
-		# def raise_assoc(assoc, index):
-		# 	'''Associate the free piece or Z piece at index with the nearest available counterpart according to its pref.'''
-		# 	a = assoc[index]
+		# def calc_over(lefts, overmat, pref, assoc):
+		# 	'''Get total overlap from the assoc configuration.'''
+		# 	over = 0
 
-		# 	if a >= len(pref[index]):
-		# 		return False
+		# 	for i in lefts:
+		# 		a = assoc[i]      # how many steps down in the preference this piece had to go
+		# 		p = pref[i][a]    # piece which is attached to i according to our configuration
+		# 		o = overmat[i][p] # overlapping symbols count
+		# 		over += o
 
-		# 	while ((index == Z) != (pref[index][a] != A)) and pref[index][a] not in free:
-		# 		a += 1
-		# 		if a >= len(pref[index]):
-		# 			logging.debug('raise_assoc failed for index %s',index)
-		# 			return False
-		# 	assoc[index] = a
-		# 	return True
+		# 	return over
 
-		def calc_over(lefts, overmat, pref, assoc):
-			'''Get total overlap from the assoc configuration.'''
-			over = 0
+		# context = EstContext(overmat, pref, lefts, A, Z)
 
-			for i in lefts:
-				a = assoc[i]      # how many steps down in the preference this piece had to go
-				p = pref[i][a]    # piece which is attached to i according to our configuration
-				o = overmat[i][p] # overlapping symbols count
-				over += o
+		# # update assoc to point to valid pieces
+		# for i in lefts:
+		# 	raise_assoc(assoc, i, context)
 
-			return over
+		# root = EstNode(assoc, 0, context)
+		# leaves = [root] # bfs node heap
+		# clean_config = None # bfs goal
 
-		# def find_conflicts(lefts, pref, assoc):
-		# 	'''Return a list of sets of pieces (indexes) which are in conflict with each
-		# 	other through association with the same follow-up piece.'''
-		# 	conflicts = []
+		# while leaves:
+		# 	node = heappop(leaves)
 
-		# 	# among the right piece that lefts pieces want, look for those that are very sought-after
-		# 	# (by 2 or more lefts pieces). These rights can not be assigned to multiple lefts and thus
-		# 	# create conflict.
-		# 	pref_obs = [(pref[p][assoc[p]], p) for p in lefts]
-		# 	pref_obs.sort()
-		# 	for right, lefts in itertools.groupby(pref_obs, key=itemgetter(0)):
-		# 		lefts = list(lefts)
-		# 		if len(lefts) > 1:
-		# 			conflicts.append(list(map(itemgetter(1),lefts)))
-			
-		# 	return conflicts	
+		# 	if not node.expand(context): # this is goal
+		# 		clean_config = node.assoc
+		# 		over = calc_over(lefts, overmat, pref, node.assoc)
+		# 		break
 
-		context = EstContext(overmat, pref, lefts, A, Z)
+		# 	for succ in node.successor(context):
+		# 		heappush(leaves, succ)
 
-		# update assoc to point to valid pieces
-		for i in lefts:
-			raise_assoc(assoc, i, context)
+		# 	# DEBUG: just one iteration	
+		# 	over = calc_over(lefts, overmat, pref, node.assoc)
+		# 	break
 
-		root = EstNode(assoc, 0, context)
-		leaves = [root] # bfs node heap
-		clean_config = None # bfs goal
-
-		while leaves:
-			node = heappop(leaves)
-
-			if not node.expand(context): # this is goal
-				clean_config = node.assoc
-				over = calc_over(lefts, overmat, pref, node.assoc)
-				break
-
-			for succ in node.successor(context):
-				heappush(leaves, succ)
-
-			# DEBUG: just one iteration	
-			over = calc_over(lefts, overmat, pref, node.assoc)
-			break
-
-		### over = sum(map(lambda f: overmat[f][pref[f][assoc[f]]], itertools.chain(free,[Z])))
-
-		H = overmat[Z][A]                                 # revert finished-loop assumption from cost g(n)
-		H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
-		H -= over
-		H = max(0,H)
+		# H = overmat[Z][A]                                 # revert finished-loop assumption from cost g(n)
+		# H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
+		# H -= over
+		# H = max(0,H)
 
 		# logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
-		# H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		# H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
+		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
 
-		# for f in free:
-		# 	free_Z = itertools.chain(free, [Z])
-		# 	max_overlap = max(map(lambda a: overmat[a][f], free_Z))
-		# 	H += len(obs[f]) - max_overlap
+		for f in free:
+			free_Z = itertools.chain(free, [Z])
+			max_overlap = max(map(lambda a: overmat[a][f], free_Z))
+			H += len(obs[f]) - max_overlap
 
-		# H = max(0,H)
+		H = max(0,H)
 		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		# DEBUG: this will happen anyway, but not if the debug stmt above (set est=0) happened
@@ -354,31 +323,67 @@ class ReelNode:
 
 		return G + H
 
-	def __init__(self, sequence, free, cost, context):
-		self.sequence = sequence            # list of the observations included in the solution (in order)
-		self.free = free                    # set of free observations (also a list)
+	def __init__(self, parent, piece, cost, context):
+		# self.sequence = sequence            # list of the observations included in the solution (in order)
+		# self.free = free                    # set of free observations (also a list)
+		self.parent = parent                # parent node in the search tree
+		self.piece = piece                  # last piece in the partial solution up to this node
 		self.cost = cost                    # path cost of the partial solution that is the sequence = number of symbols in self.__solution().
 		self.est = self.__calc_est(context) # estimated total path cost through this node to the goal
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
-		return '<<{0}: {1},{2}>>'.format(self.est, self.sequence, self.free)
+		sequence, _ = self.__sequence_free(ReelContext())
+		# sequence, _ = self.__sequence_free(ReelContext())
+		return '<<{0}: {1}>>'.format(self.est, sequence)
 
 	def __lt__(self, other):
 		'''Ordering for leaf heap.'''
 		if self.est == other.est:
-			return len(self.sequence) > len(other.sequence) # if tied, prefer to examine more complete solutions first
+			return self.__len() > other.__len() # if tied, prefer to examine more complete solutions first
 		else:
 			return self.est < other.est
 
-	def __solution(self, context):
-		'''Return the partial solution string from a list of obs indices representation.'''
-		obs, overmat, pref = context
+	# Helper functions for new representation:
+	# Every ReelNode just remembers its parent and its last piece and not the whole partial solution.
+	# The missing data can be reconstructed using these helpers.
+	def __len(self):
+		'''Returns the number of pieces in this node’s partial solution.'''
+		# return len(self.sequence) 
+		parent = self.parent
+		self_len = 1
+		# while parent:
+		# 	parent = parent.parent
+		# 	self_len += 1
+		if parent:
+			self_len += len(parent.sequence)
 
-		prev_index = self.sequence[0]
+		return self_len
+
+	def __sequence_free(self, context):
+		'''Reconstruct and return the partial solution sequence and the free list
+		from this node’s and its parent’s piece information.
+		'''
+		if self.parent:
+			# sequence = self.parent.__sequence()
+			sequence = self.parent.sequence
+		else:
+			sequence = []
+
+		sequence.append(self.piece)
+		free = list(set(context.free) - set(sequence))
+
+		return sequence, free
+
+	def __solution(self, sequence, context):
+		'''Return the partial solution string from a list of obs indices representation.'''
+		# obs, overmat, pref = context
+		obs, _, overmat, pref = context
+
+		prev_index = sequence[0]
 		S = copy.deepcopy(obs[prev_index])
 
-		for next_index in self.sequence[1:]:
+		for next_index in sequence[1:]:
 			next_piece = obs[next_index]
 			savings = overmat[prev_index][next_index]
 			S += next_piece[savings:]
@@ -391,34 +396,45 @@ class ReelNode:
 		The difference to an intermediate solution is that due to its looped nature,
 		overlap between the first and last piece can cut off some characters in the final solution.
 		'''
-		S = self.__solution(context)
+		sequence = self.sequence
+		# sequence, _ = self.__sequence_free(context)
+		S = self.__solution(sequence, context)
 
-		loop_overlap = context.overmat[self.sequence[-1]][self.sequence[0]] # Careful: don’t repeat the start of the solution if it overlaps with the end piece
+		loop_overlap = context.overmat[sequence[-1]][sequence[0]] # Careful: don’t repeat the start of the solution if it overlaps with the end piece
 		if loop_overlap > 0:
 			return S[:-loop_overlap]
 		else:
 			return S
 
+	def expand(self, context):
+		'''Evaluate the finer details of this node (sequence, free) and test the goal condition.
+		If this node is a goal, return False.
+		If this node has free pieces and is thus not a goal, return True.
+		'''
+		self.sequence, self.free = self.__sequence_free(context)
+		return bool(self.free)
+
 	def successor(self, context):
 		'''Generate all successors to this node.'''
-		obs, overmat, pref = context
+		obs, _, overmat, pref = context
 		sequence = self.sequence
 		free = self.free
+		# sequence, free = self.__sequence_free(context)
 		cost = self.cost
 
 		overlap = 0
 
-		for i in range(0, len(free)):
+		for i, p in enumerate(free):
 			P = free[i]       # new piece
 			A = sequence[0]   # sequence first piece
 			Z = sequence[-1]  # sequence last piece
 
 			# append free piece after partial solution
-			succ_sequence = sequence + [P]
-			succ_free = free[:i] + free[i+1:]
+			# succ_sequence = sequence + [P]
+			# succ_free = free[:i] + free[i+1:]
 			succ_cost = cost + len(obs[P]) + overmat[Z][A] - overmat[Z][P] - overmat[P][A]
-
-			succ = ReelNode(succ_sequence, succ_free, succ_cost, context)
+			# succ = ReelNode(succ_sequence, succ_free, succ_cost, context)
+			succ = ReelNode(self, P, succ_cost, context)
 			yield succ
 
 # ------------------------------- end of class ReelNode ------------------------------- #
@@ -557,7 +573,7 @@ def setup(in_file, read_obs_func):
 	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
 	free = [i for i in range(len(obs)) if i not in elim]             # complete overlap to reduce search space
 	pref = make_pref(obs, overmat, free)
-	context = ReelContext(obs, overmat, pref)
+	context = ReelContext(obs, free, overmat, pref)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))
@@ -592,13 +608,13 @@ def astar(root, context, goal_callback, sym_limit, full, beat_func):
 		logging.debug('Examine %s', cursor)
 		examined = examined + 1
 
-		if cursor.free:
+		if cursor.expand(context): # not goal, search goes on
 			for s in cursor.successor(context):
 				discovered = discovered + 1
 				if s.est <= sym_limit:
 					memorized = memorized + 1
 					heappush(leaves, s)
-		else:
+		else: # goal
 			quit = not goal_callback(cursor)
 			if quit or not full: break # one solution is enough
 			sym_limit = cursor.est
@@ -640,7 +656,7 @@ def dfs(root, context, goal_callback, sym_limit, full, beat_func):
 		for s in succ:
 			discovered = discovered + 1
 			if op(s.est, goal.est):
-				if s.free:
+				if s.expand(context):
 					goal, quit, ex, disc = _dfs(s, goal)
 					examined = examined + ex
 					discovered = discovered + disc
@@ -734,14 +750,14 @@ def run(free, context, search, sym_limit, full, solutions, out_fd, format_soluti
 
 	if timeout:
 		beat.cutoff_time = time.time() + timeout
-
 	beat.timeout = timeout
 	beat.memsize = memsize
 
 	# Build root node
 	# choose any obs as starting point for the solution
 	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	root = ReelNode([free[0]], free[1:], cost, context)
+	# root = ReelNode([free[0]], free[1:], cost, context)
+	root = ReelNode(None, 0, cost, context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
 		examined, discovered, memorized = search(root, context, print_goal, sym_limit, full, beat)
