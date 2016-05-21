@@ -6,7 +6,7 @@
 import logging
 import sys
 
-from reels import ReelContext, ReelNode, overlap, make_overmat, make_pref
+from reels import ReelContext, ReelNode, EstNode, EstContext, overlap, make_overmat, make_pref
 Node = ReelNode
 
 def test():
@@ -19,7 +19,8 @@ def test():
 	test_pref()
 	test_solution()
 	test_est()
-	test_successor()
+	test_reel_successor()
+	test_est_successor()
 
 	logging.info('TEST DONE')
 
@@ -117,8 +118,8 @@ def test_est():
 		else:                  
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected,actual))
 
-def test_successor():
-	sys.stderr.write('Test successor(node):\n')
+def test_reel_successor():
+	sys.stderr.write('Test ReelNode.successor():\n')
 
 	obs = ['318', '931', '8079553b00a', '180', '0ab93']
 	overmat, _ = make_overmat(obs)
@@ -136,6 +137,30 @@ def test_successor():
 			sys.stderr.write('OK\n')
 		else:
 			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(est2,S.est))
+
+def test_est_successor():
+	sys.stderr.write('Test EstNode.successor():\n')
+
+	obs = ['319', '931', '0ab93']
+	overmat, _ = make_overmat(obs)
+	pref = make_pref(obs, overmat, list(range(len(obs))))  # [[1,2], [0,2], [1,0]]
+	lefts = [0,1,2]
+	A = 1
+	Z = 1
+	context = EstContext(overmat, pref, lefts, A, Z)
+
+	assoc = [0, 0, 0]
+	n0 = EstNode(assoc, 0, context)
+
+	for S in n0.successor(context):
+		assoc_sum = S.assoc[0] + S.assoc[2]
+		expected = 1
+
+		sys.stderr.write('\tsuccessor(n0):assoc_sum({0}) == {1}: '.format(S.assoc, expected))
+		if assoc_sum == expected:
+			sys.stderr.write('OK\n')
+		else:
+			sys.stderr.write('FAIL (expected={0}, actual={1})\n'.format(expected, assoc_sum))
 
 if __name__ == "__main__":
 	test()

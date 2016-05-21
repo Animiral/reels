@@ -129,8 +129,9 @@ class EstNode:
 		This method returns an iterable over all the detected conflicts.
 		'''
 		_, pref, lefts, _, _ = context
-		rhs_lhs = [(pref[p][self.assoc[p]], p) for p in context.lefts]
-		rhs_lhs.sort() # groupby requires sorted input
+		rhs_lhs = ((pref[p][self.assoc[p]], p) for p in context.lefts)
+		rhs_lhs = sorted(rhs_lhs) # groupby requires sorted input
+		# rhs_lhs.sort()
 
 		for rhs, pair_iter in itertools.groupby(rhs_lhs, key=itemgetter(0)):
 			lhs = list(map(itemgetter(1), pair_iter))
@@ -150,14 +151,26 @@ class EstNode:
 		If this node is a goal, return False.
 		If this node has conflicts and is thus not a goal, return True.
 		'''
-		self.conflicts = self.__find_conflicts(context)
+		_, pref, lefts, _, _ = context
+
+		self.conflicts = list(self.__find_conflicts(context))
 		return bool(self.conflicts)
 
+		# Short goal test
+		# rhs = (pref[p][self.assoc[p]] for p in lefts) # sequence of all currently assigned right pieces
+		# rhs_dup = list(rhs)
+		# rhs_uniq = set(rhs_dup)
+
+		# if len(rhs_dup) == len(rhs_uniq): # every right-hand piece is uniquely assigned (no conflicts)
+		# 	return False
+		# else:
+		# 	return True	
 
 	def successor(self, context):
 		'''Generate all successors to this EstNode in the estimate search tree.'''
 		overmat, pref, _, _, _ = context
-		resolutions = map(self.__resolutions, self.conflicts) # for each conflict, we now have a list of possible resolutions for that conflict.
+		conflicts = self.__find_conflicts(context)
+		resolutions = list(map(self.__resolutions, conflicts)) # for each conflict, we now have a list of possible resolutions for that conflict.
 
 		# Every successor node emerges from a plan.
 		# A plan is a collection of left-hand pieces that should be re-associated so that they might yield a conflict-free estimate.
@@ -171,6 +184,7 @@ class EstNode:
 			for advance in itertools.chain(*plan):
 				succ_assoc[advance] += 1
 				valid = valid and raise_assoc(succ_assoc, advance, context)
+				if not valid: break
 
 				# increase succ cost by # of overlap lost
 				pref_row = pref[advance]
@@ -252,8 +266,6 @@ class ReelNode:
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
-
-
 		# enum_obs = list(range(len(obs)))
 		# lefts = free + [Z] # left-hand pieces of association heuristic
 		# assoc = [0 if x in free or x == Z else None for x in enum_obs] # root assoc for heuristic search
@@ -286,6 +298,7 @@ class ReelNode:
 
 		# while leaves:
 		# 	node = heappop(leaves)
+		# 	logging.debug('Est examine <<%s>>', node.assoc)	
 
 		# 	if not node.expand(context): # this is goal
 		# 		clean_config = node.assoc
@@ -296,13 +309,12 @@ class ReelNode:
 		# 		heappush(leaves, succ)
 
 		# 	# DEBUG: just one iteration	
-		# 	over = calc_over(lefts, overmat, pref, node.assoc)
-		# 	break
+		# 	# over = calc_over(lefts, overmat, pref, node.assoc)
+		# 	# break
 
 		# H = overmat[Z][A]                                 # revert finished-loop assumption from cost g(n)
 		# H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
 		# H -= over
-		# H = max(0,H)
 
 		# logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
 
@@ -314,9 +326,9 @@ class ReelNode:
 			free_Z = itertools.chain(free, [Z])
 			max_overlap = max(map(lambda a: overmat[a][f], free_Z))
 			H += len(obs[f]) - max_overlap
+		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		H = max(0,H)
-		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		# DEBUG: this will happen anyway, but not if the debug stmt above (set est=0) happened
 		self.est = G + H
