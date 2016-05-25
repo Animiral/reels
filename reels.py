@@ -378,11 +378,13 @@ class ReelNode:
 		'''
 		if self.parent:
 			# sequence = self.parent.__sequence()
-			sequence = copy.deepcopy(self.parent.sequence)
+			# sequence = copy.deepcopy(self.parent.sequence)
+			sequence = self.parent.sequence + [self.piece]
 		else:
-			sequence = []
+			# sequence = []
+			sequence = [self.piece]
 
-		sequence.append(self.piece)
+		# sequence.append(self.piece)
 		free = list(set(context.free) - set(sequence))
 
 		return sequence, free
@@ -767,9 +769,10 @@ def run(free, context, search, sym_limit, full, solutions, out_fd, format_soluti
 
 	# Build root node
 	# choose any obs as starting point for the solution
-	cost = len(context.obs[free[0]]) - context.overmat[0][0]
+	piece0 = free[0] # choose not-eliminated piece
+	cost = len(context.obs[piece0]) - context.overmat[piece0][piece0]
 	# root = ReelNode([free[0]], free[1:], cost, context)
-	root = ReelNode(None, 0, cost, context)
+	root = ReelNode(None, piece0, cost, context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
 		examined, discovered, memorized = search(root, context, print_goal, sym_limit, full, beat)
