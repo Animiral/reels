@@ -345,7 +345,7 @@ class ReelNode:
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
-		sequence, _ = self.__sequence_free(ReelContext())
+		sequence, _ = self.__sequence_free(ReelContext([],[],[],[])) # placeholder context
 		# sequence, _ = self.__sequence_free(ReelContext())
 		return '<<{0}: {1}>>'.format(self.est, sequence)
 
@@ -378,7 +378,7 @@ class ReelNode:
 		'''
 		if self.parent:
 			# sequence = self.parent.__sequence()
-			sequence = self.parent.sequence
+			sequence = copy.deepcopy(self.parent.sequence)
 		else:
 			sequence = []
 
