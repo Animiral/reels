@@ -497,7 +497,7 @@ def read_obs(in_file):
 	# obs = list(set(obs)) # TypeError: 'list' objects are unhashable
 	return obs
 
-def read_obs_csv(in_file, dialect):
+def read_obs_csv(in_file, dialect='excel'):
 	'''Read reel observations from the in_file using the specified CSV dialect.
 	Return the resulting list of observations, sorted and duplicates removed.
 
