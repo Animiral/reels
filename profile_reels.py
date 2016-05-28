@@ -21,15 +21,10 @@ def profile_reels():
 	args = reels.handle_args()
 	read_obs_func = functools.partial(reels.read_obs_csv, dialect=args.dialect) if args.csv else reels.read_obs
 	search = {'astar': reels.astar, 'dfs': reels.dfs} [args.algorithm]
-	free, context = reels.setup(args.in_file, read_obs_func)
+	context = reels.setup(args.in_file, read_obs_func)
 	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
 	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
-
-	# Build root node
-	# initialize leaf list with the root node
-	# choose any obs as starting point for the solution
-	cost = len(context.obs[free[0]]) - context.overmat[0][0]
-	root = reels.ReelNode([free[0]], free[1:], cost, context)
+	root = reels.make_root(context)
 
 	def print_goal(goal):
 		'''Count the number of calls to print_goal.
@@ -93,7 +88,7 @@ def time_reels(print_stuff):
 	args = reels.handle_args()
 	read_obs_func = functools.partial(reels.read_obs_csv, dialect=args.dialect) if args.csv else reels.read_obs
 	search = {'astar': reels.astar, 'dfs': reels.dfs} [args.algorithm]
-	free, context = reels.setup(args.in_file, read_obs_func)
+	context = reels.setup(args.in_file, read_obs_func)
 
 	def mute_goal(goal):
 		pass # do not print anything
@@ -120,17 +115,13 @@ def time_reels(print_stuff):
 
 	for i in range(N_RUNS):
 		if print_stuff: sys.stdout.write('.')
-		free, context = reels.setup(args.in_file, read_obs_func)
+		context = reels.setup(args.in_file, read_obs_func)
 
 		if args.timeout:
 			cutoff_time = time.time() + args.timeout
 			beat.cutoff_time = cutoff_time
 
-		# Build root node
-		# initialize leaf list with the root node
-		# choose any obs as starting point for the solution
-		cost = len(context.obs[free[0]]) - context.overmat[0][0]
-		root = reels.ReelNode([free[0]], free[1:], cost, context)
+		root = reels.make_root(context)
 
 		try:
 			t0 = time.time()

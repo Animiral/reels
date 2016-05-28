@@ -23,12 +23,12 @@ def dofile(workdir, in_file, args, reels_args):
 
 	csv = reels_args.csv or in_file.endswith('.csv') # special case: if file ext indicates CSV, always parse CSV
 	read_obs_func = functools.partial(reels.read_obs_csv, dialect=reels_args.dialect) if csv else reels.read_obs
-	free, context = reels.setup(in_file, read_obs_func)
+	context = reels.setup(in_file, read_obs_func)
 	search = {'astar': reels.astar, 'dfs': reels.dfs} [reels_args.algorithm]
 	out_fd = io.open(out_file, 'a' if args.keep else 'w')
 	format_solution = (lambda s: ','.join(s)) if csv else (lambda s: ''.join(s))
 
-	reels.run(free, context, search, reels_args.limit, reels_args.full, reels_args.solutions, out_fd, format_solution)
+	reels.run(context, search, reels_args.limit, reels_args.full, reels_args.solutions, out_fd, format_solution)
 
 def handle_args():
 	'''Parse and handle command arguments.'''

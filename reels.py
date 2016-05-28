@@ -577,6 +577,14 @@ def make_pref(obs, overmat, free):
 
 	return [ single_pref(i) if i in free else [] for i in range(len(obs)) ]	
 
+def make_root(context):
+	'''Construct the root node for a complete search within the given context.'''
+	# choose any obs as starting point for the solution
+	piece0 = context.free[0] # choose not-eliminated piece
+	cost = len(context.obs[piece0]) - context.overmat[piece0][piece0]
+	root = ReelNode(None, piece0, cost, context)
+	return root
+
 @trace
 def setup(in_file, read_obs_func):
 	'''Prepare data structures for search: obs list, overlap matrix and free list for start node.'''
@@ -592,7 +600,7 @@ def setup(in_file, read_obs_func):
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))
 
-	return free, context
+	return context
 
 @trace
 def astar(root, context, goal_callback, sym_limit, full, beat_func):
@@ -767,12 +775,7 @@ def run(free, context, search, sym_limit, full, solutions, out_fd, format_soluti
 	beat.timeout = timeout
 	beat.memsize = memsize
 
-	# Build root node
-	# choose any obs as starting point for the solution
-	piece0 = free[0] # choose not-eliminated piece
-	cost = len(context.obs[piece0]) - context.overmat[piece0][piece0]
-	# root = ReelNode([free[0]], free[1:], cost, context)
-	root = ReelNode(None, piece0, cost, context)
+	root = make_root(context)
 
 	with out_fd: # close file when finished, come what may (exceptions etc)
 		examined, discovered, memorized = search(root, context, print_goal, sym_limit, full, beat)
@@ -791,12 +794,12 @@ def main():
 
 	args = handle_args()
 	read_obs_func = functools.partial(read_obs_csv, dialect=args.dialect) if args.csv else read_obs
-	free, context = setup(args.in_file, read_obs_func)
+	context = setup(args.in_file, read_obs_func)
 	search = {'astar': astar, 'dfs': dfs} [args.algorithm]
 	out_fd = io.open(args.out_file, 'a') if args.out_file else sys.stdout
 	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
-	run(free, context, search, args.sym_limit, args.full, args.solutions, out_fd, format_solution, args.timeout, args.memsize, args.print_node_count)
+	run(context, search, args.sym_limit, args.full, args.solutions, out_fd, format_solution, args.timeout, args.memsize, args.print_node_count)
 	return 0
 
 if __name__ == "__main__":

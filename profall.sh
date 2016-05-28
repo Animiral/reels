@@ -12,16 +12,18 @@ touch $OUT_FILE
 # truncate -s 0 $OUT_FILE
 
 # write headers
-echo "in_file,arg,time,examined,discovered,memorized" > $OUT_FILE # trunc file for new record
+echo "in_file,pieces,arg,time,examined,discovered,memorized" > $OUT_FILE # trunc file for new record
 
 # classic test suite
 for f in in/*.in in/*.csv
 do
+	pieces=$(wc -l < $f)
+
 	for arg in "" "--full"
 	do
 		echo -n "$f $arg..."
 
-		echo -n "$f,$arg," >> $OUT_FILE
+		echo -n "$f,$pieces,$arg," >> $OUT_FILE
 		./profile_reels.py ts -x $LIMITS $arg "$f" >> $OUT_FILE
 
 		echo "DONE"
