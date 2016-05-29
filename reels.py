@@ -266,6 +266,33 @@ class ReelNode:
 		# Z = sequence[-1]
 		A, Z = self.__AZ()
 
+		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic mk II ~~~~~~~~~~~~~~~~~~~~~~
+		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
+
+		lefts = free + [Z] # left-hand pieces of association heuristic
+		rights = free
+		rights.append(A)
+		valid = [(i in lefts) and (j in rights) for i, j, _ in pref]
+
+		matches = len(lefts)
+
+		for i, p in enumerate(pref):
+			if valid[i]: # choose this match
+				i, j, overlap = p
+				H -= overlap
+
+				matches -= 1
+				if 0 == matches:
+					break
+
+				for k, pp in enumerate(pref[i+1:]):
+					ii, jj, _ = pp
+					if i == ii or j == jj:
+						valid[k+i+1] = False
+
+		# ~~~~~~~~~~~~~~~~~~~~~~ end neat heuristic mk II ~~~~~~~~~~~~~~~~~~~~~~
+
 		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		# enum_obs = list(range(len(obs)))
@@ -321,13 +348,13 @@ class ReelNode:
 		# logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
-		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
+		# H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		# H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
 
-		for f in free:
-			free_Z = itertools.chain(free, [Z])
-			max_overlap = max(map(lambda a: overmat[a][f], free_Z))
-			H += len(obs[f]) - max_overlap
+		# for f in free:
+		# 	free_Z = itertools.chain(free, [Z])
+		# 	max_overlap = max(map(lambda a: overmat[a][f], free_Z))
+		# 	H += len(obs[f]) - max_overlap
 		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		H = max(0,H)
@@ -599,22 +626,38 @@ def make_overmat(obs):
 
 	return overmat, elim
 
-def make_pref(obs, overmat, free):
-	'''Construct the pref list from the list of observations and their overlaps.
-	The pref list is a list which, for every free obs piece, gives the list of
-	other pieces that this piece would prefer overlapping with.
-
-	pref[i][0] is thus the obs index for the piece i such that
-	overmat[i][pref[i][0]] >= overmat[i][pref[i][x]], x > 0.
-
-	The order of the returned list is the same as the obs list from the obs parameter.
+def make_pref(overmat, free):
+	'''Construct the pref list from the overlap matrix.
+	The pref list is an alternative representation of the overlap matrix,
+	ordered by the effectiveness of a left-right piece match in terms of
+	overlapping symbols.
+	When matching left-pieces to right-pieces in the (newer) heuristic,
+	early entries in the pref list with good overlap are preferred over
+	later entries, going down the pref list until every piece is matched.
+	Elements of the pref list are tuple(left, right, overlap).
 	'''
-	def single_pref(i):
-		other_free = filter(lambda a: a != i, free)
-		best_overlap_first = sorted(other_free, key=lambda f: -overmat[i][f])
-		return list(best_overlap_first) 
+	pref = [(i, j, overmat[i][j]) for i in free for j in free]
+	pref.sort(key=itemgetter(2), reverse=True)
+	return pref
 
-	return [ single_pref(i) if i in free else [] for i in range(len(obs)) ]	
+# NOTE: This is the piece-individual variant of the pref list,
+#       currently disabled.
+# def make_pref(obs, overmat, free):
+# 	'''Construct the pref list from the list of observations and their overlaps.
+# 	The pref list is a list which, for every free obs piece, gives the list of
+# 	other pieces that this piece would prefer overlapping with.
+
+# 	pref[i][0] is thus the obs index for the piece i such that
+# 	overmat[i][pref[i][0]] >= overmat[i][pref[i][x]], x > 0.
+
+# 	The order of the returned list is the same as the obs list from the obs parameter.
+# 	'''
+# 	def single_pref(i):
+# 		other_free = filter(lambda a: a != i, free)
+# 		best_overlap_first = sorted(other_free, key=lambda f: -overmat[i][f])
+# 		return list(best_overlap_first) 
+
+# 	return [ single_pref(i) if i in free else [] for i in range(len(obs)) ]	
 
 def make_root(context):
 	'''Construct the root node for a complete search within the given context.'''
@@ -633,7 +676,8 @@ def setup(in_file, read_obs_func):
 	overmat, elim = make_overmat(obs)
 	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
 	free = [i for i in range(len(obs)) if i not in elim]             # complete overlap to reduce search space
-	pref = make_pref(obs, overmat, free)
+	# pref = make_pref(obs, overmat, free)
+	pref = make_pref(overmat, free)
 	context = ReelContext(obs, free, overmat, pref)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
