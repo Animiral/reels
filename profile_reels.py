@@ -82,7 +82,7 @@ def time_reels(print_stuff):
 	'''Returns median time.'''
 	import time
 
-	N_RUNS = 20
+	N_RUNS = 10
 	measurements = []
 
 	args = reels.handle_args()
