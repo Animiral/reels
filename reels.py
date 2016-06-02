@@ -33,10 +33,11 @@ from operator import itemgetter
 
 # ReelContext holds information about the search environment.
 # obs is the list of observation strings taken from the source reel.
+# lobs is a pre-calculated list of the lengths of each obs piece.
 # overmat is the overlap matrix of precomputed overlaps between observations.
 # pref is the list of preferred overlaps for every free piece.
 # ReelContext = namedtuple('ReelContext', ['obs', 'overmat', 'pref'])
-ReelContext = namedtuple('ReelContext', ['obs', 'free', 'overmat', 'pref'])
+ReelContext = namedtuple('ReelContext', ['obs', 'lobs', 'free', 'overmat', 'pref'])
 EstContext = namedtuple('EstContext', ['overmat', 'pref', 'lefts', 'A', 'Z'])
 
 def trace(func):
@@ -108,7 +109,6 @@ class EstNode:
 
 	The context that must be passed to every EstNode operation is an EstContext namedtuple.
 	'''
-
 	def __init__(self, assoc, cost, context):
 		overmat, pref, lefts, _, _ = context
 		self.assoc = assoc
@@ -252,46 +252,22 @@ class ReelNode:
 		'''
 		import functools
 
-		# obs, overmat, pref = context
-		obs, _, overmat, pref = context
-		# sequence, free = self.sequence, self.free
-		# sequence, free = self.__sequence_free(context)
-
-		G = self.cost
-		free = [x for x in context.free if not self.__contains(x)]
-
-		if not free: return G   # this is goal node
-
-		# A = sequence[0]
-		# Z = sequence[-1]
+		_, lobs, _, overmat, pref = context
 		A, Z = self.__AZ()
+		G = self.cost
 
-		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic mk II ~~~~~~~~~~~~~~~~~~~~~~
-		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
+		# free = [x for x in context.free if not self.__contains(x)]
+		parent = self.parent
 
-		lefts = free + [Z] # left-hand pieces of association heuristic
-		rights = free
-		rights.append(A)
-		valid = [(i in lefts) and (j in rights) for i, j, _ in pref]
+		try:
+			free = parent.free # borrow parent’s list for a sec
+		except AttributeError: # this is root node
+			free = context.free
 
-		matches = len(lefts)
+		# if not free: return G   # this is goal node
+		if len(free) <= 1: return G   # this is goal node
 
-		for i, p in enumerate(pref):
-			if valid[i]: # choose this match
-				i, j, overlap = p
-				H -= overlap
-
-				matches -= 1
-				if 0 == matches:
-					break
-
-				for k, pp in enumerate(pref[i+1:]):
-					ii, jj, _ = pp
-					if i == ii or j == jj:
-						valid[k+i+1] = False
-
-		# ~~~~~~~~~~~~~~~~~~~~~~ end neat heuristic mk II ~~~~~~~~~~~~~~~~~~~~~~
+		free.remove(Z)
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -347,14 +323,18 @@ class ReelNode:
 
 		# logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
 
-		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
-		# H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		# H -= max(map(lambda a: overmat[a][A], free)) # assume best overlap from any free piece to A
+		# ~~~~~~~~~~~~~~~~~~~~~~ end neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
-		# for f in free:
-		# 	free_Z = itertools.chain(free, [Z])
-		# 	max_overlap = max(map(lambda a: overmat[a][f], free_Z))
-		# 	H += len(obs[f]) - max_overlap
+		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
+		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		H += sum(map(lambda x: lobs[x], free))       # append all remaining pieces in full (overlap to be deducted below)
+		H -= max(map(lambda x: overmat[x][A], free)) # special piece A: not free, but can still overlap. assume best overlap from any free piece to A
+
+		free.append(Z) # restore parent list
+
+		for f in free:                                   # for every right-hand piece...
+			if f == Z: continue                          # (Z is not a right-hand piece)
+			H -= max(map(lambda x: overmat[x][f], free)) # ...assume best match overlap-wise to every left-hand piece
 		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		H = max(0,H)
@@ -374,7 +354,9 @@ class ReelNode:
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
-		sequence, _ = self.__sequence_free(ReelContext([],[],[],[])) # placeholder context
+		context = ReelContext([],[],[],[],[]) # placeholder context
+		# sequence, _ = self.__sequence_free(context)
+		sequence = self.__sequence()
 		# sequence, _ = self.__sequence_free(ReelContext())
 		return '<<{0}: {1}>>'.format(self.est, sequence)
 
@@ -414,6 +396,26 @@ class ReelNode:
 
 		return sequence
 
+	def __free(self, context):
+		'''Return a list of all free pieces in this node.
+		This list is cached in self.free.
+		If there is no cached list, we steal the free list from our parent and modify it
+		to get more efficient memory usage.
+		'''
+		try:
+			free = self.free                       # read cache
+		except AttributeError:                     # no cache?
+			parent = self.parent
+			try:
+				free = parent.__free(context)      # steal free list from parent
+				del parent.free
+			except AttributeError:                 # parent is None?
+				free = copy.deepcopy(context.free) # get a complete fresh list from context
+			free.remove(self.piece)
+
+		self.free = free # store cache
+		return free
+
 	def __AZ(self):
 		'''Determines the first and last piece in this (partial) solution.'''
 		Z = self.piece
@@ -425,38 +427,37 @@ class ReelNode:
 		A = root.piece
 
 		return A, Z
-	
-	def __contains(self, P):
-		'''Determines whether the piece P is present in the partial solution.'''
-		if P == self.piece:
-			return True
-		elif self.parent:
-			return self.parent.__contains(P)
-		else:
-			return False	
 
-	def __sequence_free(self, context):
-		'''Reconstruct and return the partial solution sequence and the free list
-		from this node’s and its parent’s piece information.
-		NOTE: This method is due for deprecation as the low-memory impl will no longer save the sequence of any node.
-		'''
-		if self.parent:
-			# sequence = self.parent.__sequence()
-			# sequence = copy.deepcopy(self.parent.sequence)
-			sequence = self.parent.sequence + [self.piece]
-		else:
-			# sequence = []
-			sequence = [self.piece]
+	# def __contains(self, P):
+	# 	'''Determines whether the piece P is present in the partial solution.'''
+	# 	if P == self.piece:
+	# 		return True
+	# 	elif self.parent:
+	# 		return self.parent.__contains(P)
+	# 	else:
+	# 		return False	
 
-		# sequence.append(self.piece)
-		free = list(set(context.free) - set(sequence))
+	# def __sequence_free(self, context):
+	# 	'''Reconstruct and return the partial solution sequence and the free list
+	# 	from this node’s and its parent’s piece information.
+	# 	NOTE: This method is due for deprecation as the low-memory impl will no longer save the sequence of any node.
+	# 	'''
+	# 	if self.parent:
+	# 		# sequence = self.parent.__sequence()
+	# 		# sequence = copy.deepcopy(self.parent.sequence)
+	# 		sequence = self.parent.sequence + [self.piece]
+	# 	else:
+	# 		# sequence = []
+	# 		sequence = [self.piece]
 
-		return sequence, free
+	# 	# sequence.append(self.piece)
+	# 	free = list(set(context.free) - set(sequence))
+
+	# 	return sequence, free
 
 	def __solution(self, sequence, context):
 		'''Return the partial solution string from a list of obs indices representation.'''
-		# obs, overmat, pref = context
-		obs, _, overmat, pref = context
+		obs, _, _, overmat, pref = context
 
 		prev_index = sequence[0]
 		S = copy.deepcopy(obs[prev_index])
@@ -491,29 +492,19 @@ class ReelNode:
 		If this node has free pieces and is thus not a goal, return True.
 		'''
 		# self.sequence, self.free = self.__sequence_free(context)
-		# return bool(self.free)
-		return self.__len() < len(context.free) # goal == all free pieces have been used up
+		free = self.__free(context)
+		return bool(free) # list empty == goal == all free pieces have been used up
+		# return self.__len() < len(context.free) # goal == all free pieces have been used up
 
 	def successor(self, context):
 		'''Generate all successors to this node.'''
-		obs, _, overmat, pref = context
-		# sequence = self.sequence
-		# free = self.free
-		# sequence, free = self.__sequence_free(context)
+		_, lobs, _, overmat, pref = context
 		cost = self.cost
 		A, Z = self.__AZ()
-		# A = sequence[0]   # sequence first piece
-		# Z = sequence[-1]  # sequence last piece
-
-		overlap = 0
-		free = (x for x in context.free if not self.__contains(x))
+		free = copy.deepcopy(self.free) # we need this copy to be able to iterate over it safely while __calc_est is going on
 
 		for P in free:
-			# append free piece after partial solution
-			# succ_sequence = sequence + [P]
-			# succ_free = free[:i] + free[i+1:]
-			succ_cost = cost + len(obs[P]) + overmat[Z][A] - overmat[Z][P] - overmat[P][A]
-			# succ = ReelNode(succ_sequence, succ_free, succ_cost, context)
+			succ_cost = cost + lobs[P] + overmat[Z][A] - overmat[Z][P] - overmat[P][A]
 			succ = ReelNode(self, P, succ_cost, context)
 			yield succ
 
@@ -626,38 +617,37 @@ def make_overmat(obs):
 
 	return overmat, elim
 
-def make_pref(overmat, free):
-	'''Construct the pref list from the overlap matrix.
-	The pref list is an alternative representation of the overlap matrix,
-	ordered by the effectiveness of a left-right piece match in terms of
-	overlapping symbols.
-	When matching left-pieces to right-pieces in the (newer) heuristic,
-	early entries in the pref list with good overlap are preferred over
-	later entries, going down the pref list until every piece is matched.
-	Elements of the pref list are tuple(left, right, overlap).
-	'''
-	pref = [(i, j, overmat[i][j]) for i in free for j in free]
-	pref.sort(key=itemgetter(2), reverse=True)
-	return pref
-
-# NOTE: This is the piece-individual variant of the pref list,
-#       currently disabled.
-# def make_pref(obs, overmat, free):
-# 	'''Construct the pref list from the list of observations and their overlaps.
-# 	The pref list is a list which, for every free obs piece, gives the list of
-# 	other pieces that this piece would prefer overlapping with.
-
-# 	pref[i][0] is thus the obs index for the piece i such that
-# 	overmat[i][pref[i][0]] >= overmat[i][pref[i][x]], x > 0.
-
-# 	The order of the returned list is the same as the obs list from the obs parameter.
+# NOTE: The heuristic based on the overlap matrix list is not optimistic and thus invalid.
+# def make_matlist(overmat, free):
+# 	'''Construct the overlap matrix list from the overlap matrix.
+# 	The overlap matrix list is an alternative representation of the overlap matrix,
+# 	ordered by the effectiveness of a left-right piece match in terms of
+# 	overlapping symbols.
+# 	When matching left-pieces to right-pieces in the neat2 heuristic,
+# 	early entries in the overlap matrix list with good overlap are preferred over
+# 	later entries, going down the overlap matrix list until every piece is matched.
+# 	Elements of the overlap matrix list are tuple(left, right, overlap).
 # 	'''
-# 	def single_pref(i):
-# 		other_free = filter(lambda a: a != i, free)
-# 		best_overlap_first = sorted(other_free, key=lambda f: -overmat[i][f])
-# 		return list(best_overlap_first) 
+# 	matlist = [(i, j, overmat[i][j]) for i in free for j in free]
+# 	matlist.sort(key=itemgetter(2), reverse=True)
+# 	return matlist
 
-# 	return [ single_pref(i) if i in free else [] for i in range(len(obs)) ]	
+def make_pref(overmat, free):
+	'''Construct the pref list from some context.
+	The pref list is a list which, for every free obs piece, gives the list of
+	other pieces that this piece would prefer overlapping with.
+
+	pref[i][0] is thus the obs index for the piece i such that
+	overmat[i][pref[i][0]] >= overmat[i][pref[i][x]], x > 0.
+
+	The order of the returned list is the same as the obs list from the obs parameter.
+	'''
+	def single_pref(i):
+		other_free = filter(lambda a: a != i, free)
+		best_overlap_first = sorted(other_free, key=lambda f: -overmat[i][f])
+		return list(best_overlap_first) 
+
+	return [ single_pref(i) if i in free else [] for i in range(len(overmat)) ]	
 
 def make_root(context):
 	'''Construct the root node for a complete search within the given context.'''
@@ -676,9 +666,10 @@ def setup(in_file, read_obs_func):
 	overmat, elim = make_overmat(obs)
 	obs = [(None if i in elim else obs[i]) for i in range(len(obs))] # eliminate initial pieces with
 	free = [i for i in range(len(obs)) if i not in elim]             # complete overlap to reduce search space
+	lobs = [len(o) for o in obs]
 	# pref = make_pref(obs, overmat, free)
 	pref = make_pref(overmat, free)
-	context = ReelContext(obs, free, overmat, pref)
+	context = ReelContext(obs, lobs, free, overmat, pref)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))

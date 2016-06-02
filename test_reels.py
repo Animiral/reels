@@ -49,8 +49,9 @@ def test_solution():
 	obs = ['abc','cde','cab']
 	overmat, _ = make_overmat(obs)
 	free = list(range(len(obs)))
-	pref = make_pref(obs, overmat, free)
-	context = ReelContext(obs, free, overmat, pref)
+	lobs = [len(o) for o in obs]
+	pref = make_pref(overmat, free)
+	context = ReelContext(obs, lobs, free, overmat, pref)
 
 	# cases = [
 	# 	(Node([0,1],[2],0,context),'abcde'),
@@ -79,9 +80,9 @@ def test_solution():
 
 	for c in cases:
 		node, expected = c
-		sys.stderr.write('\t__solution({0}) == {1}: '.format(node.sequence, expected))
+		sys.stderr.write('\t__solution({0}) == {1}: '.format(node._ReelNode__sequence(), expected))
 		# actual = node._ReelNode__solution(context)
-		actual = node._ReelNode__solution(node.sequence, context)
+		actual = node._ReelNode__solution(node._ReelNode__sequence(), context)
 		if actual == expected: 
 			sys.stderr.write('OK\n')
 		else:                  
@@ -102,7 +103,7 @@ def test_pref():
 		free = list(range(len(obs))) # there are no redundant pieces in cases
 
 		sys.stderr.write('\tmake_pref({0},<mat>,<free>) == {1}: '.format(obs, expected))
-		actual = make_pref(obs, overmat, free)
+		actual = make_pref(overmat, free)
 
 		if actual == expected: 
 			sys.stderr.write('OK\n')
@@ -115,21 +116,24 @@ def test_est():
 	obs1 = ['abc','cdef']
 	obs2 = ['318', '931', '8079553b00a', '180', '0ab93']
 	obs3 = ['babb','bcb','bba']   # babbcb vs. babbabcb
+	lobs1 = [len(o) for o in obs1]
+	lobs2 = [len(o) for o in obs2]
+	lobs3 = [len(o) for o in obs3]
 
 	overmat1, _ = make_overmat(obs1)
-	pref1 = make_pref(obs1, overmat1, list(range(len(obs1))))
+	pref1 = make_pref(overmat1, list(range(len(obs1))))
 	free1 = list(range(len(obs1)))
-	context1 = ReelContext(obs1, free1, overmat1, pref1)
+	context1 = ReelContext(obs1, lobs1, free1, overmat1, pref1)
 
 	overmat2, _ = make_overmat(obs2)
-	pref2 = make_pref(obs2, overmat2, list(range(len(obs2))))
+	pref2 = make_pref(overmat2, list(range(len(obs2))))
 	free2 = list(range(len(obs2)))
-	context2 = ReelContext(obs2, free2, overmat2, pref2)
+	context2 = ReelContext(obs2, lobs2, free2, overmat2, pref2)
 
 	overmat3, _ = make_overmat(obs3)
-	pref3 = make_pref(obs3, overmat3, list(range(len(obs3))))
+	pref3 = make_pref(overmat3, list(range(len(obs3))))
 	free3 = list(range(len(obs3)))
-	context3 = ReelContext(obs3, free3, overmat3, pref3)
+	context3 = ReelContext(obs3, lobs3, free3, overmat3, pref3)
 
 	obs1_node0 = Node(parent=None, piece=0, cost=3, context=context1)
 	obs1_node0.expand(context1)
@@ -179,8 +183,9 @@ def test_reel_successor():
 	obs = ['318', '931', '8079553b00a', '180', '0ab93']
 	overmat, _ = make_overmat(obs)
 	free = list(range(len(obs)))
-	pref = make_pref(obs, overmat, free)
-	context = ReelContext(obs, free, overmat, pref)
+	lobs = [len(o) for o in obs]
+	pref = make_pref(overmat, free)
+	context = ReelContext(obs, lobs, free, overmat, pref)
 
 	# n0 = Node([2],[0,1,3,4],11,context)
 	n0 = Node(parent=None, piece=2, cost=11, context=context)
@@ -201,7 +206,7 @@ def test_est_successor():
 
 	obs = ['319', '931', '0ab93']
 	overmat, _ = make_overmat(obs)
-	pref = make_pref(obs, overmat, list(range(len(obs))))  # [[1,2], [0,2], [1,0]]
+	pref = make_pref(overmat, list(range(len(obs))))  # [[1,2], [0,2], [1,0]]
 	lefts = [0,1,2]
 	A = 1
 	Z = 1
