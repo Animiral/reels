@@ -169,7 +169,8 @@ class EstNode:
 	def successor(self, context):
 		'''Generate all successors to this EstNode in the estimate search tree.'''
 		overmat, pref, _, _, _ = context
-		conflicts = self.__find_conflicts(context)
+		# conflicts = self.__find_conflicts(context)
+		conflicts = self.conflicts
 		resolutions = list(map(self.__resolutions, conflicts)) # for each conflict, we now have a list of possible resolutions for that conflict.
 
 		# Every successor node emerges from a plan.
@@ -267,74 +268,80 @@ class ReelNode:
 		# if not free: return G   # this is goal node
 		if len(free) <= 1: return G   # this is goal node
 
-		free.remove(Z)
-
 		# ~~~~~~~~~~~~~~~~~~~~~~ neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
-		# enum_obs = list(range(len(obs)))
-		# lefts = free + [Z] # left-hand pieces of association heuristic
-		# assoc = [0 if x in free or x == Z else None for x in enum_obs] # root assoc for heuristic search
+		lefts = free # left-hand pieces of association heuristic
+		assoc = [0 if x in lefts else None for x in range(len(lobs))] # root assoc for heuristic search
 
-		# self.est = 0 # DEBUG: set temp value
-		# logging.debug('est %s', self)
-		# logging.debug('assoc for obs=%s, pref=%s = %s', obs, pref, assoc)
+		self.est = 0 # DEBUG: set temp value
+		logging.debug('est %s', self)
+		obs = context[0]
+		logging.debug('assoc for obs=%s, pref=%s = %s', obs, pref, assoc)
 
-		# def calc_over(lefts, overmat, pref, assoc):
-		# 	'''Get total overlap from the assoc configuration.'''
-		# 	over = 0
+		def calc_over(lefts, overmat, pref, assoc):
+			'''Get total overlap from the assoc configuration.'''
+			over = 0
 
-		# 	for i in lefts:
-		# 		a = assoc[i]      # how many steps down in the preference this piece had to go
-		# 		p = pref[i][a]    # piece which is attached to i according to our configuration
-		# 		o = overmat[i][p] # overlapping symbols count
-		# 		over += o
+			for i in lefts:
+				a = assoc[i]      # how many steps down in the preference this piece had to go
+				p = pref[i][a]    # piece which is attached to i according to our configuration
+				o = overmat[i][p] # overlapping symbols count
+				over += o
 
-		# 	return over
+			return over
 
-		# context = EstContext(overmat, pref, lefts, A, Z)
+		context = EstContext(overmat, pref, lefts, A, Z)
 
-		# # update assoc to point to valid pieces
-		# for i in lefts:
-		# 	raise_assoc(assoc, i, context)
+		# update assoc to point to valid pieces
+		for i in lefts:
+			raise_assoc(assoc, i, context)
 
-		# root = EstNode(assoc, 0, context)
-		# leaves = [root] # bfs node heap
-		# clean_config = None # bfs goal
+		root = EstNode(assoc, 0, context)
+		leaves = [root] # bfs node heap
+		clean_config = None # bfs goal
+		over = 0
 
-		# while leaves:
-		# 	node = heappop(leaves)
-		# 	logging.debug('Est examine <<%s>>', node.assoc)	
+		while leaves:
+			node = heappop(leaves)
+			logging.debug('Est examine <<%s>>', node.assoc)	
 
-		# 	if not node.expand(context): # this is goal
-		# 		clean_config = node.assoc
-		# 		over = calc_over(lefts, overmat, pref, node.assoc)
-		# 		break
+			if not node.expand(context): # this is goal
+				clean_config = node.assoc
+				over = calc_over(lefts, overmat, pref, node.assoc)
+				break
 
-		# 	for succ in node.successor(context):
-		# 		heappush(leaves, succ)
+			logging.debug('Conflicts=%s', node.conflicts)
 
-		# 	# DEBUG: just one iteration	
-		# 	# over = calc_over(lefts, overmat, pref, node.assoc)
-		# 	# break
+			for succ in node.successor(context):
+				heappush(leaves, succ)
 
-		# H = overmat[Z][A]                                 # revert finished-loop assumption from cost g(n)
-		# H += functools.reduce(lambda a, f: a + len(obs[f]), free, 0)   # total length of leftover pieces without overlap
-		# H -= over
+			# DEBUG: just one iteration	
+			# over = calc_over(lefts, overmat, pref, node.assoc)
+			# break
 
-		# logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
+		H = overmat[Z][A]                                 # revert finished-loop assumption from cost g(n)
+		H -= over
+
+		free.remove(Z) # restore parent list
+		H += functools.reduce(lambda a, f: a + lobs[f], free, 0)   # total length of leftover pieces without overlap
+		free.append(Z) # adopt parent list for current node needs
+
+		logging.debug('G=%s, H=%s, over=%s, est=%s', G, H, over, G+H)
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ end neat heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		# ~~~~~~~~~~~~~~~~~~~~~~ basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
-		H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
-		H += sum(map(lambda x: lobs[x], free))       # append all remaining pieces in full (overlap to be deducted below)
-		H -= max(map(lambda x: overmat[x][A], free)) # special piece A: not free, but can still overlap. assume best overlap from any free piece to A
+		# free.remove(Z) # adopt parent list for current node needs
 
-		free.append(Z) # restore parent list
+		# H = overmat[Z][A]                            # revert finished-loop assumption from cost g(n)
+		# H += sum(map(lambda x: lobs[x], free))       # append all remaining pieces in full (overlap to be deducted below)
+		# H -= max(map(lambda x: overmat[x][A], free)) # special piece A: not free, but can still overlap. assume best overlap from any free piece to A
 
-		for f in free:                                   # for every right-hand piece...
-			if f == Z: continue                          # (Z is not a right-hand piece)
-			H -= max(map(lambda x: overmat[x][f], free)) # ...assume best match overlap-wise to every left-hand piece
+		# free.append(Z) # restore parent list
+
+		# for f in free:                                 # for every right-hand piece...
+		# 	if f == Z: continue                          # (Z is not a right-hand piece)
+		# 	H -= max(map(lambda x: overmat[x][f], free)) # ...assume best match overlap-wise to every left-hand piece
 		# ~~~~~~~~~~~~~~~~~~~~~~ end basic heuristic ~~~~~~~~~~~~~~~~~~~~~~
 
 		H = max(0,H)
@@ -672,7 +679,8 @@ def setup(in_file, read_obs_func):
 	context = ReelContext(obs, lobs, free, overmat, pref)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
-	logging.debug('overmat =\n%s', '\n'.join(map(lambda line: '  '.join(map(str,line)), overmat)))
+	logging.debug('overmat =\n%s', '\n'.join(map(lambda en_line: '[{0}] '.format(en_line[0]) + '  '.join(map(str,en_line[1])), enumerate(overmat))))
+	logging.debug('pref =\n%s', '\n'.join(map(lambda en_line: '[{0}] '.format(en_line[0]) + '  '.join(map(str,en_line[1])), enumerate(pref))))
 
 	return context
 

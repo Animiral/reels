@@ -10,7 +10,7 @@ do
 	out=$(echo $f | sed 's#\.in#\.out#')
 	$(./reels.py $LIMITS --out_file "$out" "$f")
 	r=$(echo $f | sed 's#/\(.*\)\.in#/s_\1.txt#')
-	ref=$(cat $r)
+	ref=$(tail -n 1 $r)
 
 	if [ ! -f "$out" ]; then sleep 1; fi
 	echo -n "$(basename $f) : "
@@ -23,7 +23,7 @@ do
 	out=$(echo $f | sed 's#\.csv#\.out#')
 	$(./reels.py $LIMITS --out_file "$out" "$f")
 	r=$(echo $f | sed 's#/\(.*\)\.csv#/s_\1.txt#')
-	ref=$(cat $r)
+	ref=$(tail -n 1 $r)
 
 	if [ ! -f "$out" ]; then sleep 1; fi
 	echo -n "$(basename $f) : "

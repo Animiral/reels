@@ -55,17 +55,15 @@ def profile_reels():
 			raise AbortSearch()
 
 	if args.timeout:
-		cutoff_time = time.time() + args.timeout
-
+		beat.cutoff_time = time.time() + args.timeout
 	beat.timeout = args.timeout
 	beat.memsize = args.memsize
-	beat.cutoff_time = cutoff_time
 
 	print_goal.print_count = args.solutions
 
 	pro_file = 'out.profile'
 	try:
-		cProfile.runctx('search(root, context, print_goal, args.sym_limit, args.full)', globals(), locals(), pro_file)
+		cProfile.runctx('search(root, context, print_goal, args.sym_limit, args.full, beat)', globals(), locals(), pro_file)
 	except AbortSearch:
 		pass # search killed by resource exhaustion
 	p = pstats.Stats(pro_file)
