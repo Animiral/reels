@@ -212,10 +212,11 @@ def test_est_successor():
 	Z = 1
 	context = EstContext(overmat, pref, lefts, A, Z)
 
-	assoc = [0, 0, 0]
-	n0 = EstNode(assoc, 0, context)
+	n0 = EstNode(None, 0)
 
+	n0.expand(context)
 	for S in n0.successor(context):
+		S.expand(context)
 		assoc_sum = S.assoc[0] + S.assoc[2]
 		expected = 1
 

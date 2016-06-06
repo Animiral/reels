@@ -109,16 +109,73 @@ class EstNode:
 
 	The context that must be passed to every EstNode operation is an EstContext namedtuple.
 	'''
-	def __init__(self, assoc, cost, context):
-		overmat, pref, lefts, _, _ = context
-		self.assoc = assoc
+	def __init__(self, parent, cost, resolv=None, step=0):
+		'''Initialize the EstNode.
+		parent: the parent EstNode.
+		resolv: an obs piece for which the assoc should be raised compared to the parent assoc to resolve a conflict.
+		step: how much the assoc for the resolv piece should be raised compared to the parent.
+		cost: the number of overlapping symbols that this assoc configuration is missing compared to the root assoc.
+		'''
+		# overmat, pref, lefts, _, _ = context
+		# self.assoc = assoc
+		self.parent = parent
+		self.resolv = resolv
+		self.step = step
 		self.cost = cost
 
 	def __lt__(self, other):
 		'''Ordering for leaf heap.'''
 		return self.cost < other.cost
 
-	def __find_conflicts(self, context):
+	def __make_assoc(self, context):
+		'''Generate this node’s assoc from the parent assoc + the resolv piece.
+		Since the root node has no parent, it starts with the all-0 assoc. It will automatically convert to
+		point only to valid right-hand pieces when run through __rhs during __find_conflict.
+		'''
+		try:
+			self.assoc = copy.deepcopy(self.parent.assoc)
+		except AttributeError:
+			self.assoc = [-1 for _ in range(len(context.pref))]
+			# update assoc to point to valid pieces
+			for l in context.lefts:
+				self.assoc[l] += self.__step(l, context)
+			return
+
+		self.assoc[self.resolv] += self.step
+		# self.assoc[self.resolv] += 1
+
+
+	# def __rhs(self, p, context):
+	# 	'''Return the right-piece associated with the left-hand piece p according to this EstNode’s assoc.
+	# 	self.assoc will be adjusted on demand to point to the next available right piece in the line.
+	# 	Raise IndexError if valid right-hand pieces have been exhausted in this Node.
+	# 	'''
+	# 	_, pref, lefts, A, Z = context
+	# 	pref_p = pref[p]   # preferred rhs for this piece
+	# 	a = self.assoc[p]  # current preference cursor (index into pref_p) -> raise this until valid piece
+
+	# 	while True:
+	# 		rhs = pref_p[a] # Raise IndexError if valid right-hand pieces have been exhausted in this Node.
+	# 		if (rhs == A) or ((rhs in lefts) and (rhs != Z)):
+	# 			self.assoc[p] = a # save result of valid piece search
+	# 			return rhs
+
+	# 		a += 1 # try next preferred piece
+
+	def __find_conflict(self, context):
+		'''Return one conflict in self.assoc.
+
+		A conflict is a left-hand to right-hand association such that
+		pref[p][self.assoc[p]] == pref[q][self.assoc[q]], p != q, where p and q are both left-hand pieces
+		(free pieces + Z).
+
+		The representation of one such conflict, as returned by this method, is a tuple (p, q) of
+		two of the left-hands (lhs) involved.
+
+		If there are no more conflicts (meaning that the EstNode is a goal), returns nothing (None).
+		If the assoc has already exhausted the pref list(s), raises IndexError.
+		'''
+		# Old docstring for __find_conflicts:
 		'''Return every conflict in self.assoc.
 
 		A conflict is a left-hand to right-hand association such that
@@ -129,22 +186,59 @@ class EstNode:
 		This method returns an iterable over all the detected conflicts.
 		'''
 		_, pref, lefts, _, _ = context
+		# rhs_lhs = ((self.__rhs(p, context), p) for p in context.lefts)
 		rhs_lhs = ((pref[p][self.assoc[p]], p) for p in context.lefts)
 		rhs_lhs = sorted(rhs_lhs) # groupby requires sorted input
-		# rhs_lhs.sort()
 
-		for rhs, pair_iter in itertools.groupby(rhs_lhs, key=itemgetter(0)):
-			lhs = list(map(itemgetter(1), pair_iter))
-			if len(lhs) > 1: # more than one lhs associated with the rhs is a conflict
-				yield lhs
+		rhs_prev = None
+		for rhs_next, lhs_next in rhs_lhs:
+			if rhs_prev == rhs_next:
+				return lhs_prev, lhs_next # the two conflicted pieces fighting over rhs_next
+			rhs_prev, lhs_prev = rhs_next, lhs_next
 
-	def __resolutions(self, conflict):
-		'''Resolving a conflict involves nothing more than re-associating all but one of the involved
-		left-hand pieces. One resolution is a list of the pieces to be re-associated. For a conflict
-		with N involved pieces, there are thus N resolutions.
+		# for rhs, pair_iter in itertools.groupby(rhs_lhs, key=itemgetter(0)):
+		# 	lhs = list(map(itemgetter(1), pair_iter))
+		# 	if len(lhs) > 1: # more than one lhs associated with the rhs is a conflict
+		# 		yield lhs
+
+	# def __resolutions(self, conflict):
+	# 	'''Resolving a conflict involves nothing more than re-associating all but one of the involved
+	# 	left-hand pieces. One resolution is a list of the pieces to be re-associated. For a conflict
+	# 	with N involved pieces, there are thus N resolutions.
+	# 	'''
+	# 	for i in range(len(conflict)):
+	# 		yield conflict[:i] + conflict[i+1:]
+
+	def __step(self, resolv, context):
+		'''Return the step that a successor node must add on top of the resolv pieces’s assoc for this node
+		to arrive at a new valid assoc mapping (referring to one of the eligible pieces from the available
+		right-hand pieces).
+		Raise IndexError if valid right-hand pieces have been exhausted in this Node.
 		'''
-		for i in range(len(conflict)):
-			yield conflict[:i] + conflict[i+1:]
+		_, pref, lefts, A, Z = context
+		pref_p = pref[resolv]       # preferred rhs for this piece
+		a = self.assoc[resolv] + 1  # current preference cursor (index into pref_p) -> raise this until valid piece
+
+		while True:
+			rhs = pref_p[a] # Raise IndexError if valid right-hand pieces have been exhausted in this Node.
+
+			if (rhs == A) or ((rhs in lefts) and (rhs != Z)):
+				return a - self.assoc[resolv]
+
+			a += 1 # try next preferred piece
+
+	def __resolv(self, resolv, context):
+		'''Produce one successor to the current node by resolving a conflict involving the resolv piece.
+		Raise IndexError if the conflict cannot be resolved by re-associating this piece (rhs have been exhausted).
+		'''
+		overmat, pref, _, _, _ = context
+		assoc = self.assoc
+
+		step = self.__step(resolv, context)
+		rhs_before = pref[resolv][assoc[resolv]]
+		rhs_after = pref[resolv][assoc[resolv] + step]
+		cost = overmat[resolv][rhs_before] - overmat[resolv][rhs_after]
+		return EstNode(self, cost, resolv, step)
 
 	def expand(self, context):
 		'''Evaluate the finer details of this node (conflicts) and test the goal condition.
@@ -153,52 +247,63 @@ class EstNode:
 		'''
 		_, pref, lefts, _, _ = context
 
-		self.conflicts = list(self.__find_conflicts(context))
-		return bool(self.conflicts)
+		self.__make_assoc(context)
+		assoc = self.assoc
 
-		# Short goal test
-		# rhs = (pref[p][self.assoc[p]] for p in lefts) # sequence of all currently assigned right pieces
-		# rhs_dup = list(rhs)
-		# rhs_uniq = set(rhs_dup)
+		try:
+			p, q = self.__find_conflict(context)
+			self.succ = list()
 
-		# if len(rhs_dup) == len(rhs_uniq): # every right-hand piece is uniquely assigned (no conflicts)
-		# 	return False
-		# else:
-		# 	return True	
+			try: self.succ.append(self.__resolv(p, context))
+			except IndexError: pass
+
+			try: self.succ.append(self.__resolv(q, context))
+			except IndexError: pass
+
+			return True
+
+		except TypeError: # no conflict found (goal)
+			return False
+
+		# self.conflicts = list(self.__find_conflict(context))
+		# return bool(self.conflicts)
 
 	def successor(self, context):
-		'''Generate all successors to this EstNode in the estimate search tree.'''
-		overmat, pref, _, _, _ = context
-		# conflicts = self.__find_conflicts(context)
-		conflicts = self.conflicts
-		resolutions = list(map(self.__resolutions, conflicts)) # for each conflict, we now have a list of possible resolutions for that conflict.
+		'''Return all successors to this EstNode in the estimate search tree.'''
+		return self.succ
 
-		# Every successor node emerges from a plan.
-		# A plan is a collection of left-hand pieces that should be re-associated so that they might yield a conflict-free estimate.
-		# A plan is generated by attempting one (of several possible) resolutions for every conflict instance.
-		for plan in itertools.product(*resolutions):
-			succ_assoc = copy.deepcopy(self.assoc)
-			succ_cost = self.cost
-			valid = True
+		# '''Generate all successors to this EstNode in the estimate search tree.'''
+		# overmat, pref, _, _, _ = context
+		# # conflicts = self.__find_conflicts(context)
+		# conflicts = self.conflicts
+		# resolutions = list(map(self.__resolutions, conflicts)) # for each conflict, we now have a list of possible resolutions for that conflict.
 
-			# advance is the piece index of one piece which we must re-associate by advancing its assoc entry to the next pref.
-			for advance in itertools.chain(*plan):
-				succ_assoc[advance] += 1
-				valid = valid and raise_assoc(succ_assoc, advance, context)
-				if not valid: break
+		# # Every successor node emerges from a plan.
+		# # A plan is a collection of left-hand pieces that should be re-associated so that they might yield a conflict-free estimate.
+		# # A plan is generated by attempting one (of several possible) resolutions for every conflict instance.
+		# for plan in itertools.product(*resolutions):
+		# 	succ_assoc = copy.deepcopy(self.assoc)
+		# 	succ_cost = self.cost
+		# 	valid = True
 
-				# increase succ cost by # of overlap lost
-				pref_row = pref[advance]
-				self_pref = pref_row[self.assoc[advance]]
-				succ_pref = pref_row[succ_assoc[advance]]
-				self_overlap = overmat[advance][self_pref] 
-				succ_overlap = overmat[advance][succ_pref] 
-				loss = self_overlap - succ_overlap
-				assert loss >= 0
-				succ_cost += loss
+		# 	# advance is the piece index of one piece which we must re-associate by advancing its assoc entry to the next pref.
+		# 	for advance in itertools.chain(*plan):
+		# 		succ_assoc[advance] += 1
+		# 		valid = valid and raise_assoc(succ_assoc, advance, context)
+		# 		if not valid: break
 
-			if valid:
-				yield EstNode(succ_assoc, succ_cost, context)
+		# 		# increase succ cost by # of overlap lost
+		# 		pref_row = pref[advance]
+		# 		self_pref = pref_row[self.assoc[advance]]
+		# 		succ_pref = pref_row[succ_assoc[advance]]
+		# 		self_overlap = overmat[advance][self_pref] 
+		# 		succ_overlap = overmat[advance][succ_pref] 
+		# 		loss = self_overlap - succ_overlap
+		# 		assert loss >= 0
+		# 		succ_cost += loss
+
+		# 	if valid:
+		# 		yield EstNode(succ_assoc, succ_cost, context)
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
@@ -293,24 +398,27 @@ class ReelNode:
 		context = EstContext(overmat, pref, lefts, A, Z)
 
 		# update assoc to point to valid pieces
-		for i in lefts:
-			raise_assoc(assoc, i, context)
+		# for i in lefts:
+		# 	raise_assoc(assoc, i, context)
 
-		root = EstNode(assoc, 0, context)
+		root = EstNode(None, 0)
+		# root = EstNode(assoc, 0, context)
 		leaves = [root] # bfs node heap
 		clean_config = None # bfs goal
 		over = 0
 
 		while leaves:
 			node = heappop(leaves)
+
+			search_more = node.expand(context)
 			logging.debug('Est examine <<%s>>', node.assoc)	
 
-			if not node.expand(context): # this is goal
+			if not search_more: # this is goal
 				clean_config = node.assoc
 				over = calc_over(lefts, overmat, pref, node.assoc)
 				break
 
-			logging.debug('Conflicts=%s', node.conflicts)
+			# logging.debug('Conflicts=%s', node.conflicts)
 
 			for succ in node.successor(context):
 				heappush(leaves, succ)
