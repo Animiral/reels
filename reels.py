@@ -395,11 +395,17 @@ class ReelNode:
 		clean_config = None # bfs goal
 		over = 0
 
+		resolv_steps = 100 # max iterations to try and resolve conflicts
+
 		while leaves:
 			node = heappop(leaves)
 
 			search_more = node.expand(context)
 			logging.debug('Est examine <<%s>>', node.assoc)	
+
+			resolv_steps -= 1
+			if resolv_steps <= 0:
+				search_more = False # limit reached
 
 			if not search_more: # this is goal
 				clean_config = node.assoc
