@@ -24,6 +24,7 @@ limited to a maximum number of examined or memorized nodes.
 import logging
 import copy
 import functools
+import ctypes
 
 from heapq import heappush, heappop
 from collections import namedtuple
@@ -315,4 +316,54 @@ class Heuristic:
 		logging.debug('H=%s, over=%s', H, over)
 		return H
 
+# DEBUG code
+if __name__ == "__main__":
+	import itertools
+	import reels
 
+	lestimate = ctypes.cdll.LoadLibrary("./estimate.so")
+	create_context = lestimate.create_context # create_context function
+	create_context.restype = ctypes.c_void_p
+	estimate = lestimate.estimate # estimate function
+
+	obs = ['abc', 'bcred', 'deab', 'de']
+	overmat, elim = reels.make_overmat(obs)
+	free = set([i for i in range(len(obs)) if i not in elim])        # complete overlap to reduce search space
+	lobs = [len(o) for o in obs]
+	pref = reels.make_pref(overmat, free)
+	# reel_context = reels.ReelContext(obs, lobs, free, overmat, pref)
+	lefts = [0, 1, 2]  # in real code, convert lefts set to list
+	a = 0
+	z = 0
+
+	n = len(obs)                 # length of obs list, overmat etc.
+	p = len(obs) - len(elim) - 1 # length of one pref list
+	l = len(lefts)
+
+	# adapt lists to uniform lengths and types for passing to C interface
+	flat_overmat = [v if v != None else -1 for v in itertools.chain(*overmat)]
+	padded_pref = [pr if pr != [] else [-1 for j in range(p)] for pr in pref] # pref with uniform lengths of p for member arrays
+	flat_pref = list(itertools.chain(*padded_pref))
+
+	OvermatArray = ctypes.c_int * (n * n)  # C array type to store overmat
+	PrefArray = ctypes.c_int * (n * p)     # C array type to store pref
+	LobsArray = ctypes.c_int * n           # C array type to store lobs
+	LeftsArray = ctypes.c_int * l          # C array type to store lefts
+	
+	print("overmat = ", overmat)
+	print("flat overmat = ", flat_overmat)
+	print("pref = ", pref)
+	print("flat pref = ", flat_pref)
+
+	c_overmat = OvermatArray(*flat_overmat)
+	c_pref = PrefArray(*flat_pref)
+	c_lobs = LobsArray(*lobs)
+	c_lefts = LeftsArray(*lefts)
+
+	context = create_context(n, c_overmat, p, c_pref, c_lobs)
+	print("context = {0}".format(hex(context)))
+	result = estimate(l, c_lefts, a, z, context)
+	lestimate.destroy_context(context)
+
+	print("lestimate.estimate({0},{1},{2},{3},{4}) = {5}".format(l, lefts, a, z, hex(context), result))
+	# print("lestimate.EstContext = ", lestimate.EstContext)
