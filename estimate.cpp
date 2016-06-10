@@ -32,9 +32,12 @@
 #include <sstream>
 class EstContext;
 class ReelContext;
-static std::string debug_assoc_str(const std::vector<int>& assoc);
-static std::string debug_est_context_str(const EstContext& context);
-static std::string debug_reel_context_str(const ReelContext& context);
+__attribute__((unused)) static std::string debug_assoc_str(const std::vector<int>& assoc);
+__attribute__((unused)) static std::string debug_est_context_str(const EstContext& context);
+__attribute__((unused)) static std::string debug_reel_context_str(const ReelContext& context);
+#ifndef LOG_ENABLED
+#define LOG_ENABLED false
+#endif
 // End Temp debug shit
 
 using std::size_t;
@@ -44,12 +47,34 @@ class ReelContext;
 
 extern "C"
 {
-	ReelContext* create_context(size_t n, int overmat[], size_t p, piece_t pref[], int lobs[]) noexcept;
+	ReelContext* create_context(size_t n, int* overmat, size_t p, piece_t* pref, int* lobs) noexcept;
 	void destroy_context(const ReelContext* context) noexcept;
 	int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const ReelContext* context) noexcept;
 }
 
 const piece_t NONE = -1; // sentinel marker in lists such as pref
+
+template<bool enable = true>
+class LogImpl {
+public:
+	operator bool() { return bool(std::cerr); }
+
+	template<typename T> LogImpl& operator<<(const T& t)
+	{
+		std::cerr << t;
+		return *this;
+	}
+};
+
+template<>
+class LogImpl<false>
+{
+public:
+	operator bool() { return false; }
+	template<typename T> LogImpl& operator<<(const T& t) { return *this; }
+};
+
+using Log = LogImpl<LOG_ENABLED>;
 
 /**
  * ReelContext is an object that holds precomputed global information relevant to the heuristic.
@@ -61,6 +86,7 @@ class ReelContext
 {
 
 public:
+
 	/**
 	 * Construct the context from the free-form data as passed through the C interface.
 	 * The data are copied into properly managed C++ containers and made accessible
@@ -120,12 +146,18 @@ public:
 		return m_lobs[i];
 	}
 
+	Log& log() const
+	{
+		return m_log;
+	}
+
 private:
 	size_t m_n;
 	std::vector<int> m_overmat;
 	size_t m_p;
 	std::vector< std::vector<piece_t> > m_pref;
 	std::vector<int> m_lobs;
+	mutable Log m_log;	
 
 	friend std::string debug_reel_context_str(const ReelContext& );
 
@@ -433,12 +465,14 @@ static int assoc_value(const std::vector<int>& assoc, const EstContext& est_cont
 extern "C" ReelContext* create_context(size_t n, int overmat[], size_t p, piece_t pref[], int lobs[]) noexcept
 {
 	try {
-		return new ReelContext(n, overmat, p, pref, lobs);
+		auto context = new ReelContext(n, overmat, p, pref, lobs);
+		context->log() << "Created new context, n=" << n << ", p=" << p << "\n";
+		return context;
 	}
 	catch(const std::exception& e) {
 		// Exceptions are for example std::bad_alloc.
 		// Swallow error for the C interface.
-		// std::cerr << e.what() << "\n";
+		std::cerr << e.what() << "\n";
 		return nullptr;
 	}
 }
@@ -463,12 +497,14 @@ extern "C" void destroy_context(const ReelContext* context) noexcept
  */
 extern "C" int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const ReelContext* reel_context) noexcept
 {
+	auto log = reel_context->log();
+
 	try {
 		auto est_context = EstContext(l, lefts, a, z);
 		auto leaves = std::priority_queue<EstNode::Ptr, std::vector<EstNode::Ptr>, greater_cost> ();
 
-		std::cerr << debug_reel_context_str(*reel_context) << "\n";
-		std::cerr << debug_est_context_str(est_context) << "\n";
+		log << debug_reel_context_str(*reel_context) << "\n";
+		log << debug_est_context_str(est_context) << "\n";
 
 		// initial leaves = root only
 		auto root = std::make_unique<EstNode>();
@@ -476,27 +512,21 @@ extern "C" int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const R
 
 		// resolv_steps = 100 # max iterations to try and resolve conflicts
 
-		std::cerr << "Est search start! l=" << l << ", a=" << a << ", z=" << z << ", leaves: " << leaves.size() << "\n";
+		log << "Est search start! l=" << l << ", a=" << a << ", z=" << z << ", leaves: " << leaves.size() << "\n";
 		while(!leaves.empty()) {
 			// Forcibly extract the Ptr, we’re not using top() again anyway
 			EstNode::Ptr node = const_cast<EstNode::Ptr&&> (leaves.top());
 			leaves.pop();
 
-			std::cerr << "Expand node " << node.get() << "...\n";
+			log << "Expand node " << node.get() << "...\n";
 
 			bool search_more = node->expand(est_context, *reel_context);
-			std::cerr << "Est examine <<" << debug_assoc_str(node->assoc()) << ">>  " << node->cost() << "\n";
-
-			// resolv_steps -= 1
-			// if resolv_steps <= 0:
-				// search_more = False # limit reached
+			log << "Est examine <<" << debug_assoc_str(node->assoc()) << ">>  " << node->cost() << "\n";
 
 			if(!search_more) {
 				auto& assoc = node->assoc();
 				return assoc_value(assoc, est_context, *reel_context);
 			}
-
-			// # logging.debug('Conflicts=%s', node.conflicts)
 
 			for(EstNode::Ptr& succ : EstNode::successors(std::move(node))) {
 				leaves.push(std::move(succ));
@@ -509,7 +539,7 @@ extern "C" int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const R
 	catch(const std::exception& e) {
 		// Exceptions are for example std::bad_alloc.
 		// Swallow error for the C interface.
-		std::cerr << e.what() << "\n";
+		log << e.what() << "\n";
 		return -1;
 	}
 }
@@ -534,11 +564,13 @@ static std::string debug_arr2str(const Container& arr)
 	return buffer.str();
 }
 
+__attribute__((unused))
 static std::string debug_assoc_str(const std::vector<int>& assoc)
 {
 	return debug_arr2str(assoc);
 }
 
+__attribute__((unused))
 static std::string debug_est_context_str(const EstContext& context)
 {
 	std::ostringstream buffer;
@@ -547,6 +579,7 @@ static std::string debug_est_context_str(const EstContext& context)
 	return buffer.str();
 }
 
+__attribute__((unused))
 static std::string debug_pref_str(const std::vector<std::vector<piece_t>>& pref)
 {
 	std::vector<std::string> pref_strings;
@@ -555,6 +588,7 @@ static std::string debug_pref_str(const std::vector<std::vector<piece_t>>& pref)
 	return debug_arr2str(pref_strings);
 }
 
+__attribute__((unused))
 static std::string debug_reel_context_str(const ReelContext& context)
 {
 	std::ostringstream buffer;
@@ -596,7 +630,7 @@ int main()
 
 	int testimate = estimate(l, lefts, a, z, context);
 
-	std::cerr << "Result = " << testimate << "\n";
+	context->log() << "Result = " << testimate << "\n";
 
 	destroy_context(context);
 }

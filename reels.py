@@ -39,7 +39,7 @@ from operator import itemgetter
 # overmat is the overlap matrix of precomputed overlaps between observations.
 # pref is the list of preferred overlaps for every free piece.
 # ReelContext = namedtuple('ReelContext', ['obs', 'overmat', 'pref'])
-ReelContext = namedtuple('ReelContext', ['obs', 'lobs', 'free', 'overmat', 'pref'])
+ReelContext = namedtuple('ReelContext', ['obs', 'lobs', 'free', 'overmat', 'pref', 'heuristic'])
 
 def trace(func):
 	'''Decorator which outputs name of called function to log'''
@@ -63,36 +63,6 @@ def is_subsequence(haystack, needle):
 			return True
 	else:
 		return False
-
-def raise_assoc(assoc, index, context):
-	'''Associate the free piece or Z piece at index with the nearest available counterpart according to its pref.'''
-	_, pref, lefts, A, Z = context
-
-	pref_i = pref[index]
-	a = assoc[index]
-
-	if a >= len(pref_i):
-		return False
-
-	while True:
-		# abort search if there is no valid right-piece to raise to
-		if a >= len(pref_i):
-			logging.debug('raise_assoc failed for index %s', index)
-			return False
-
-		# Check for suitability of right-piece. Valid right-pieces are the same as the left pieces (free pieces in general),
-		# except that Z is an exclusive left piece and A is an exclusive right piece, and A is not a valid right piece for Z.
-		rhs = pref_i[a] 
-		if index == Z: rhs_valid = rhs in lefts
-		else:          rhs_valid = rhs == A or (rhs != Z and rhs in lefts)
-
-		if rhs_valid: 
-			break
-
-		a += 1
-
-	assoc[index] = a
-	return True
 
 # NOTE: Lists of observations are generally implemented as lists of indexes into the g_obs list.
 
@@ -143,7 +113,7 @@ class ReelNode:
 		'''
 		import functools
 
-		_, lobs, _, overmat, pref = context
+		_, lobs, _, overmat, pref, heuristic = context
 		A, Z = self.__AZ()
 		G = self.cost
 
@@ -164,7 +134,6 @@ class ReelNode:
 		self.est = 0 # DEBUG: set temp value
 		logging.debug('est %s', self)
 
-		heuristic = estimate.Heuristic(overmat, pref, lobs) # TODO: cache this object in ReelContext
 		H = heuristic(free, A, Z)
 
 		# def calc_over(lefts, overmat, pref, assoc):
@@ -254,7 +223,7 @@ class ReelNode:
 
 	def __str__(self):
 		'''String view for debugging: the cost and est is not important; we want to know the partial solution and free pieces'''
-		context = ReelContext([],[],[],[],[]) # placeholder context
+		# context = ReelContext([],[],[],[],[],None) # placeholder context
 		sequence = self.__sequence()
 		return '<<{0}: {1}>>'.format(self.est, sequence)
 
@@ -337,7 +306,7 @@ class ReelNode:
 
 	def __solution(self, sequence, context):
 		'''Return the partial solution string from a list of obs indices representation.'''
-		obs, _, _, overmat, pref = context
+		obs, _, _, overmat, pref, _ = context
 
 		prev_index = sequence[0]
 		S = copy.deepcopy(obs[prev_index])
@@ -374,7 +343,7 @@ class ReelNode:
 
 	def successor(self, context):
 		'''Generate all successors to this node.'''
-		_, lobs, _, overmat, pref = context
+		_, lobs, _, overmat, pref, _ = context
 		cost = self.cost
 		A, Z = self.__AZ()
 		free = copy.deepcopy(self.free) # we need this copy to be able to iterate over it safely while __calc_est is going on
@@ -534,7 +503,8 @@ def setup(in_file, read_obs_func):
 	free = set([i for i in range(len(obs)) if i not in elim])        # complete overlap to reduce search space
 	lobs = [len(o) for o in obs]
 	pref = make_pref(overmat, free)
-	context = ReelContext(obs, lobs, free, overmat, pref)
+	heuristic = estimate.HeuristicCpp(overmat, pref, lobs)
+	context = ReelContext(obs, lobs, free, overmat, pref, heuristic)
 
 	logging.debug('obs is now \n%s\n(eliminated %s).', '\n'.join(map(lambda x: '[{0}] '.format(x) + ' '.join(map(str,obs[x])), free)), elim)
 	logging.debug('overmat =\n%s', '\n'.join(map(lambda en_line: '[{0}] '.format(en_line[0]) + '  '.join(map(str,en_line[1])), enumerate(overmat))))
@@ -747,6 +717,7 @@ def main():
 	format_solution = (lambda s: ','.join(s)) if args.csv else (lambda s: ''.join(s))
 
 	run(context, search, args.sym_limit, args.full, args.solutions, out_fd, format_solution, args.timeout, args.memsize, args.print_node_count)
+	context.heuristic.cleanup() # BUG: sometimes this leaks because limits checks use system.exit
 	return 0
 
 if __name__ == "__main__":

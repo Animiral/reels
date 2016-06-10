@@ -3,6 +3,7 @@
 
 CXX="g++ --std=c++14"
 CXXFLAGS="-g -Wall"
+# CXXFLAGS="-g -Wall -DLOG_ENABLED=true"
 
 function make_so {
 	$CXX $CXXFLAGS -shared -fPIC -o estimate.so estimate.cpp   # so/library
