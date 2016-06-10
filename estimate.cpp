@@ -25,7 +25,17 @@
 #include <queue>
 #include <memory>
 #include <algorithm>
-#include <iostream> // Temp debug shit
+
+// Temp debug shit
+#include <iostream>
+#include <string>
+#include <sstream>
+class EstContext;
+class ReelContext;
+static std::string debug_assoc_str(const std::vector<int>& assoc);
+static std::string debug_est_context_str(const EstContext& context);
+static std::string debug_reel_context_str(const ReelContext& context);
+// End Temp debug shit
 
 using std::size_t;
 
@@ -116,6 +126,8 @@ private:
 	size_t m_p;
 	std::vector< std::vector<piece_t> > m_pref;
 	std::vector<int> m_lobs;
+
+	friend std::string debug_reel_context_str(const ReelContext& );
 
 };
 
@@ -245,6 +257,14 @@ public:
 		return m_assoc;
 	}
 
+	/**
+	 * Return this node’s cost value.
+	 */
+	int cost() const
+	{
+		return m_cost;
+	}
+
 private:
 	std::shared_ptr<EstNode> m_parent;
 	piece_t m_resolution;
@@ -267,10 +287,10 @@ private:
 			return assoc;
 		}
 		else {
-			std::vector<int> assoc(reel_context.n(), 0);
+			std::vector<int> assoc(reel_context.n(), -1);
 
 			for(piece_t l : est_context.lefts()) {
-				assoc[l] += this->step(l, est_context, reel_context);	
+				assoc[l] += this->step(assoc, l, est_context, reel_context);	
 			}
 
 			return assoc;
@@ -318,7 +338,7 @@ private:
 	 */
 	EstNode::Ptr resolve(piece_t piece, const EstContext& est_context, const ReelContext& reel_context)
 	{
-		int step = this->step(piece, est_context, reel_context);
+		int step = this->step(m_assoc, piece, est_context, reel_context);
 
 		if(step >= 0) {
 			int rank = m_assoc[piece];
@@ -338,7 +358,7 @@ private:
 	 * to find a new valid right-piece given the left/free lists in the EstContext.
 	 * If the piece has already exhausted all pref ranks, returns -1.
 	 */
-	int step(piece_t piece, const EstContext& est_context, const ReelContext& reel_context)
+	int step(const std::vector<int>& assoc, piece_t piece, const EstContext& est_context, const ReelContext& reel_context)
 	{
 		auto is_right = [&est_context] (piece_t right)
 		{
@@ -346,7 +366,7 @@ private:
 			return (right == est_context.a()) || (std::find(L.begin(), L.end(), right) != L.end());
 		};
 
-		int result = m_assoc[piece] + 1;  // current preference cursor (index into pref_p) -> raise this until valid piece
+		int result = assoc[piece] + 1;  // current preference cursor (index into pref_p) -> raise this until valid piece
 		int max = static_cast<int>(reel_context.p()); // cast to unsigned because -1 is our error value
 
 		while(result < max)
@@ -354,7 +374,7 @@ private:
 			piece_t right = reel_context.pref(piece, result);
 
 			if(is_right(right))
-				return result;
+				return result - assoc[piece];
 
 			result++;	
 		}
@@ -445,18 +465,27 @@ extern "C" int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const R
 {
 	try {
 		auto est_context = EstContext(l, lefts, a, z);
-		auto root = EstNode();
 		auto leaves = std::priority_queue<EstNode::Ptr, std::vector<EstNode::Ptr>, greater_cost> ();
+
+		std::cerr << debug_reel_context_str(*reel_context) << "\n";
+		std::cerr << debug_est_context_str(est_context) << "\n";
+
+		// initial leaves = root only
+		auto root = std::make_unique<EstNode>();
+		leaves.push(std::move(root));
 
 		// resolv_steps = 100 # max iterations to try and resolve conflicts
 
+		std::cerr << "Est search start! l=" << l << ", a=" << a << ", z=" << z << ", leaves: " << leaves.size() << "\n";
 		while(!leaves.empty()) {
 			// Forcibly extract the Ptr, we’re not using top() again anyway
 			EstNode::Ptr node = const_cast<EstNode::Ptr&&> (leaves.top());
 			leaves.pop();
 
+			std::cerr << "Expand node " << node.get() << "...\n";
+
 			bool search_more = node->expand(est_context, *reel_context);
-			// logging.debug('Est examine <<%s>>', node.assoc)	
+			std::cerr << "Est examine <<" << debug_assoc_str(node->assoc()) << ">>  " << node->cost() << "\n";
 
 			// resolv_steps -= 1
 			// if resolv_steps <= 0:
@@ -480,9 +509,66 @@ extern "C" int estimate(size_t l, piece_t lefts[], piece_t a, piece_t z, const R
 	catch(const std::exception& e) {
 		// Exceptions are for example std::bad_alloc.
 		// Swallow error for the C interface.
-		// std::cerr << e.what() << "\n";
+		std::cerr << e.what() << "\n";
 		return -1;
 	}
+}
+
+template<typename Container>
+static std::string debug_arr2str(const Container& arr)
+{
+	std::ostringstream buffer;
+	buffer << "{ ";
+
+	bool first = true;
+	for(const auto& elem : arr) {
+		if(first)
+			first = false;
+		else
+			buffer << ", ";
+
+		buffer << elem;
+	}
+
+	buffer << " }";
+	return buffer.str();
+}
+
+static std::string debug_assoc_str(const std::vector<int>& assoc)
+{
+	return debug_arr2str(assoc);
+}
+
+static std::string debug_est_context_str(const EstContext& context)
+{
+	std::ostringstream buffer;
+	buffer << "EstContext{ ";
+	buffer << "lefts=" << debug_arr2str(context.lefts()) << ", a=" << context.a() << ", z=" << context.z() << " }";
+	return buffer.str();
+}
+
+static std::string debug_pref_str(const std::vector<std::vector<piece_t>>& pref)
+{
+	std::vector<std::string> pref_strings;
+	auto pref2str = debug_arr2str<std::vector<piece_t>>;
+	std::transform(begin(pref), end(pref), std::back_inserter(pref_strings), pref2str);
+	return debug_arr2str(pref_strings);
+}
+
+static std::string debug_reel_context_str(const ReelContext& context)
+{
+	std::ostringstream buffer;
+	buffer << "ReelContext{ ";
+	buffer << "n=" << context.n() << ", ";
+	buffer << "p=" << context.p() << ", ";
+	buffer << "overmat=" << debug_arr2str(context.m_overmat) << ", ";
+
+	// std::vector<std::string> pref_strings;
+	// auto pref2str = debug_arr2str<std::vector<piece_t>>;
+	// std::transform(context.m_pref.begin(), context.m_pref.end(), std::back_inserter(pref_strings), pref2str);
+	buffer << "pref=" << debug_pref_str(context.m_pref) << ", ";
+	buffer << "lobs=" << debug_arr2str(context.m_lobs) << " }";
+	return buffer.str();
 }
 
 /**
@@ -498,13 +584,15 @@ int main()
 	piece_t pref[] = { 2, 1,  2, 0,  0, 1,  -1, -1 };
 	int lobs[] = { 4, 4, 4, 3 };
 
+	std::cerr << "obs=" << debug_arr2str(std::vector<const char*>(obs, obs+n)) << "\n";
+
 	const ReelContext* context = create_context(n, overmat, p, pref, lobs);
 
 	// heuristic environment
 	size_t l = 3;
 	piece_t lefts[] = { 0, 1, 2 };
 	piece_t a = 0;
-	piece_t z = 0;		
+	piece_t z = 0;
 
 	int testimate = estimate(l, lefts, a, z, context);
 
