@@ -26,7 +26,7 @@
 #include <memory>
 #include <algorithm>
 
-// Temp debug shit
+// Temp debug stuff
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -38,7 +38,7 @@ __attribute__((unused)) static std::string debug_reel_context_str(const ReelCont
 #ifndef LOG_ENABLED
 #define LOG_ENABLED false
 #endif
-// End Temp debug shit
+// End Temp debug stuff
 
 using std::size_t;
 
@@ -376,7 +376,7 @@ private:
 			int rank = m_assoc[piece];
 			piece_t rhs_before = reel_context.pref(piece, rank);
 			piece_t rhs_after = reel_context.pref(piece, rank+step);
-			int cost = reel_context.overlap(piece, rhs_before) - reel_context.overlap(piece, rhs_after);
+			int cost = m_cost + reel_context.overlap(piece, rhs_before) - reel_context.overlap(piece, rhs_after);
 
 			return std::make_unique<EstNode> (piece, step, cost);
 		}
@@ -605,10 +605,27 @@ static std::string debug_reel_context_str(const ReelContext& context)
 	return buffer.str();
 }
 
+/*******************************************************************************
+ * Self-contained unit tests - compile this module as a standalone executable. *
+ *******************************************************************************/
+
+void test1();
+void test2();
+
 /**
  * This main function turns this module into a stand-alone unit test.
  */
 int main()
+{
+	test1();
+	test2();
+}
+
+/**
+ * Test 1
+ * A very basic test with 4 obs pieces & ambiguous pref
+ */
+void test1()
 {
 	// problem environment
 	size_t n = 4;
@@ -618,6 +635,7 @@ int main()
 	piece_t pref[] = { 2, 1,  2, 0,  0, 1,  -1, -1 };
 	int lobs[] = { 4, 4, 4, 3 };
 
+	std::cerr << "== Test 1 ==\n";
 	std::cerr << "obs=" << debug_arr2str(std::vector<const char*>(obs, obs+n)) << "\n";
 
 	const ReelContext* context = create_context(n, overmat, p, pref, lobs);
@@ -628,9 +646,89 @@ int main()
 	piece_t a = 0;
 	piece_t z = 0;
 
-	int testimate = estimate(l, lefts, a, z, context);
+	int expected = 4;
+	int actual = estimate(l, lefts, a, z, context);
 
-	context->log() << "Result = " << testimate << "\n";
+	if(expected == actual)
+		std::cerr << "Result OK\n";
+	else
+		std::cerr << "Result FAILED: expected=" << expected << ", actual=" << actual << "\n";
 
 	destroy_context(context);
+}
+
+/**
+ * Test 2
+ * A test derived from the r30_2 reel test case.
+ */
+void test2()
+{
+	// problem environment
+	size_t n = 19;
+	__attribute__((unused)) const char* obs[] = {"03b95b7", "076190", "0b72", "3b920031", "48989a78", "56a2038", "689", "6a0b7", "75a95", "7703b9", "782075a", "83bb256", "89a78207", "8ba56748", "9163", "9200317", "a06a0b", "a20385", "b7207"};
+	int overmat[] = {
+		0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2,
+		1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 5, 1, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 5, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0, 0, 0,
+		0, 0, 3, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2,
+		0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		4, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+		0, 0, 0, 0, 0, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 2, 0, 0, 0, 0, 0, 0, 1, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0,
+		0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 2, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+		0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 2, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
+	};
+
+	size_t p = 18;
+	piece_t pref[] = {
+		18, 8, 9, 10, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17,
+		0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+		18, 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+		15, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18,
+		12, 10, 11, 13, 0, 1, 2, 3, 5, 6, 7, 8, 9, 14, 15, 16, 17, 18,
+		17, 11, 12, 13, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 14, 15, 16, 18,
+		12, 14, 15, 0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 16, 17, 18,
+		2, 18, 8, 9, 10, 0, 1, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 17,
+		5, 0, 1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+		0, 3, 14, 15, 1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18,
+		8, 16, 17, 0, 1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15, 18,
+		5, 6, 7, 0, 1, 2, 3, 4, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18,
+		10, 1, 8, 9, 0, 2, 3, 4, 5, 6, 7, 11, 13, 14, 15, 16, 17, 18,
+		4, 11, 12, 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18,
+		3, 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18,
+		8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 16, 17, 18,
+		7, 2, 18, 0, 1, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 17,
+		5, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
+		1, 8, 9, 10, 0, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17
+	};
+	int lobs[] = { 7, 6, 4, 8, 8, 7, 3, 5, 5, 6, 7, 7, 8, 8, 4, 7, 6, 6, 5 };
+
+	std::cerr << "== Test 2 ==\n";
+	std::cerr << "obs=" << debug_arr2str(std::vector<const char*>(obs, obs+n)) << "\n";
+
+	const ReelContext* context = create_context(n, overmat, p, pref, lobs);
+
+	// heuristic environment
+	size_t l = 17;
+	piece_t lefts[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18 };
+	piece_t a = 0;
+	piece_t z = 4;
+
+	// partial solution = 0, 13, 4. Length = 7 + 8 + 8 - 2 = 21, est <= (70-21) = 49
+	int expected = 49;
+	int actual = estimate(l, lefts, a, z, context);
+
+	if(expected >= actual)
+		std::cerr << "Result OK (" << actual << "<=" << expected << ")\n";
+	else
+		std::cerr << "Result FAILED: expected=" << expected << " < actual=" << actual << "\n";
 }

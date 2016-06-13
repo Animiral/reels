@@ -2,7 +2,7 @@
 # This script compiles estimate.cpp into a library to be accessed by reels.py.
 
 CXX="g++ --std=c++14"
-CXXFLAGS="-g -Wall"
+CXXFLAGS="-g -Wall $1"
 # CXXFLAGS="-g -Wall -DLOG_ENABLED=true"
 
 function make_so {
